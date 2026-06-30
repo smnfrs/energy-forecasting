@@ -1,0 +1,77 @@
+[build-system]
+requires = ["flit_core>=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "energy-forecasting"
+version = "0.1.0"
+description = "Day-ahead electricity price and generation/load forecasting for the German energy market"
+requires-python = ">=3.13"
+
+dependencies = [
+    # Data
+    "pandas>=2.2",
+    "pyarrow>=15.0",
+    "numpy>=2.0",
+
+    # ML models
+    "scikit-learn>=1.5",
+    "lightgbm>=4.0",
+    "xgboost>=3.0",
+    "catboost>=1.2",
+    "mapie>=1.3",
+    "shap>=0.46",
+
+    # Experiment tracking & tuning
+    "mlflow>=3.0",
+    "optuna>=4.0",
+
+    # API & CLI
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "typer>=0.15",
+    "httpx>=0.27",
+
+    # Data sources
+    "requests>=2.31",
+    "fredapi>=0.5",
+    "yfinance>=0.2",
+
+    # Weather data (Open-Meteo)
+    "openmeteo-requests>=1.3",
+    "requests-cache>=1.2",
+    "retry-requests>=2.0",
+
+    # Domain
+    "pysolar>=0.10",
+    "holidays>=0.40",
+
+    # Utilities
+    "loguru>=0.7",
+    "joblib>=1.4",
+    "tqdm>=4.66",
+    "python-dotenv>=1.0",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.9",
+    "pytest>=8.0",
+    "responses>=0.25",
+    "jupyterlab",
+    "matplotlib>=3.9",
+]
+
+[project.scripts]
+energy-forecasting = "energy_forecasting.cli:app"
+
+[tool.ruff]
+line-length = 99
+src = ["energy_forecasting"]
+
+[tool.ruff.lint]
+extend-select = ["I"]  # isort
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,30 @@
+==============================================================================================================
+Phase A v2 vs EMA upstream — overlap-window comparison
+==============================================================================================================
+target         region         EMA window                       EMA mdl         EMA MAE    our MAE   EMA RMSE   our RMSE
+--------------------------------------------------------------------------------------------------------------
+wind_onshore   DE_50HZ        2026-02-15 -> 2026-03-21         LightGBM         1093.0      861.5     1526.4     1155.8
+wind_onshore   DE_AMPRION     2026-02-15 -> 2026-03-21         LightGBM          871.0      965.1     1217.3     1260.2
+wind_onshore   DE_TENNET      2026-02-15 -> 2026-03-21         XGBoost          1655.1     1589.1     2206.5     2265.2
+wind_onshore   DE_TRANSNETBW  2026-02-15 -> 2026-03-21         ElasticNet        170.9      156.8      229.5      205.7
+wind_offshore  DE_50HZ        2026-02-15 -> 2026-03-21         LightGBM          169.7      137.1      230.1      189.5
+wind_offshore  DE_TENNET      no EMA data                     
+solar          DE_50HZ        2026-02-04 -> 2026-03-10         ElasticNet        801.8      279.2     1122.9      619.6
+solar          DE_AMPRION     2026-02-04 -> 2026-03-10         ElasticNet        580.8      286.7      914.9      630.7
+solar          DE_TENNET      2026-02-04 -> 2026-03-10         ElasticNet        923.5      437.4     1291.2      934.3
+solar          DE_TRANSNETBW  2026-02-04 -> 2026-03-10         ElasticNet        350.3      159.6      525.5      331.7
+load           DE_50HZ        no EMA data                     
+load           DE_AMPRION     no EMA data                     
+load           DE_TENNET      no EMA data                     
+load           DE_TRANSNETBW  no EMA data                     
+load           DE_CREOS       2026-02-06 -> 2026-03-12         XGBoost            18.3       12.2       24.1       15.8
+gen_load_diff  DE_NATIONAL    no EMA data                     
+--------------------------------------------------------------------------------------------------------------
+
+Mean across 10 comparable targets:
+  EMA  MAE: 663.4    RMSE: 928.9
+  ours MAE: 488.5    RMSE: 760.9
+  ratio (ours/EMA): MAE 0.736  RMSE 0.819
+
+  ours beats EMA on MAE in 9/10 comparisons
+  ours beats EMA on RMSE in 8/10 comparisons

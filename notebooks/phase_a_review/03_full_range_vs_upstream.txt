@@ -1,0 +1,46 @@
+EMA combined: (36456, 9), span 2022-01-01 00:00:00+00:00 -> 2026-03-06 23:00:00+00:00
+  source breakdown: {'hindcast': 26304, 'backtest': 10152}
+
+==============================================================================================================
+Full-range comparison — ours vs EMA cached historical forecasts
+==============================================================================================================
+
+--- wind_onshore / DE_NATIONAL (EMA col: prognostizierte_erzeugung_onshore…) ---
+  FULL      2022-01-15 → 2026-03-06  n=36120  EMA: MAE=  1753 RMSE=  2320  ours: MAE=  2164 RMSE=  2842  ratio: 1.23/1.22
+  hindcast  2022-01-15 → 2024-12-31  n=25968  EMA: MAE=  1710 RMSE=  2279  ours: MAE=  2075 RMSE=  2711  ratio: 1.21/1.19  (EMA uses actual weather, ours uses forecast)
+  BACKTEST  2025-01-08 → 2026-03-06  n=10152  EMA: MAE=  1862 RMSE=  2422  ours: MAE=  2390 RMSE=  3151  ratio: 1.28/1.30  ← apples-to-apples (forecast weather both sides)
+
+--- wind_offshore / DE_NATIONAL (EMA col: prognostizierte_erzeugung_offshore…) ---
+  FULL      2022-01-15 → 2026-03-06  n=36120  EMA: MAE=   580 RMSE=   796  ours: MAE=   528 RMSE=   731  ratio: 0.91/0.92
+  hindcast  2022-01-15 → 2024-12-31  n=25968  EMA: MAE=   595 RMSE=   817  ours: MAE=   524 RMSE=   733  ratio: 0.88/0.90  (EMA uses actual weather, ours uses forecast)
+  BACKTEST  2025-01-08 → 2026-03-06  n=10152  EMA: MAE=   541 RMSE=   741  ours: MAE=   537 RMSE=   727  ratio: 0.99/0.98  ← apples-to-apples (forecast weather both sides)
+
+--- solar / DE_NATIONAL (EMA col: prognostizierte_erzeugung_photovoltaik…) ---
+  FULL      2022-01-15 → 2026-03-06  n=36120  EMA: MAE=  1251 RMSE=  2504  ours: MAE=   813 RMSE=  1545  ratio: 0.65/0.62
+  hindcast  2022-01-15 → 2024-12-31  n=25968  EMA: MAE=  1377 RMSE=  2706  ours: MAE=   773 RMSE=  1448  ratio: 0.56/0.54  (EMA uses actual weather, ours uses forecast)
+  BACKTEST  2025-01-08 → 2026-03-06  n=10152  EMA: MAE=   927 RMSE=  1890  ours: MAE=   914 RMSE=  1769  ratio: 0.99/0.94  ← apples-to-apples (forecast weather both sides)
+
+--- load / DE_NATIONAL (EMA col: prognostizierter_verbrauch_gesamt…) ---
+  FULL      2022-01-15 → 2026-03-06  n=36120  EMA: MAE=  2050 RMSE=  2897  ours: MAE=  1063 RMSE=  1501  ratio: 0.52/0.52
+  hindcast  2022-01-15 → 2024-12-31  n=25968  EMA: MAE=  2273 RMSE=  3160  ours: MAE=  1043 RMSE=  1471  ratio: 0.46/0.47  (EMA uses actual weather, ours uses forecast)
+  BACKTEST  2025-01-08 → 2026-03-06  n=10152  EMA: MAE=  1481 RMSE=  2079  ours: MAE=  1115 RMSE=  1576  ratio: 0.75/0.76  ← apples-to-apples (forecast weather both sides)
+
+--- gen_load_diff / DE_NATIONAL (EMA col: _gen_load_diff…) ---
+  FULL      2022-01-15 → 2026-03-06  n=36120  EMA: MAE=  2724 RMSE=  3493  ours: MAE=  2008 RMSE=  2531  ratio: 0.74/0.72
+  hindcast  2022-01-15 → 2024-12-31  n=25968  EMA: MAE=  2921 RMSE=  3717  ours: MAE=  2083 RMSE=  2616  ratio: 0.71/0.70  (EMA uses actual weather, ours uses forecast)
+  BACKTEST  2025-01-08 → 2026-03-06  n=10152  EMA: MAE=  2221 RMSE=  2843  ours: MAE=  1816 RMSE=  2299  ratio: 0.82/0.81  ← apples-to-apples (forecast weather both sides)
+
+==============================================================================================================
+Aggregate over BACKTEST window (2025-01 onwards, both sides use forecast weather)
+==============================================================================================================
+       target      region  ema_mae  ema_rmse  our_mae  our_rmse     n
+ wind_onshore DE_NATIONAL   1862.1    2422.2   2389.7    3150.6 10152
+wind_offshore DE_NATIONAL    540.6     740.7    536.9     726.6 10152
+        solar DE_NATIONAL    927.2    1890.1    914.1    1769.0 10152
+         load DE_NATIONAL   1480.8    2079.0   1114.9    1575.5 10152
+gen_load_diff DE_NATIONAL   2220.6    2843.2   1816.2    2298.6 10152
+
+Mean MAE  — EMA: 1406.3    ours: 1354.4    ratio: 0.963
+Mean RMSE — EMA: 1995.0    ours: 1904.1    ratio: 0.954
+  ours beats EMA on MAE in 4/5
+  ours beats EMA on RMSE in 4/5
