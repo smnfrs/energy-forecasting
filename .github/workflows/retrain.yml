@@ -1,0 +1,70 @@
+name: Retrain
+
+on:
+  schedule:
+    # 06:00 UTC on 1st and 15th of each month
+    - cron: "0 6 1,15 * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Force retrain even if no degradation detected"
+        type: boolean
+        default: false
+      price_only:
+        description: "Retrain only price models (always true in CI; gen/load is manual)"
+        type: boolean
+        default: true
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120  # Price-only retrain; gen/load is manual (8-12h)
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up conda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          environment-file: environment.yml
+          activate-environment: energy-forecasting
+          auto-activate-base: false
+
+      - name: Download models from Release
+        run: gh release download latest --dir models/ --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update data
+        run: conda run -n energy-forecasting energy-forecasting update all
+
+      - name: Run price retrain
+        run: |
+          FORCE_FLAG=""
+          if [ "${{ inputs.force }}" = "true" ]; then
+            FORCE_FLAG="--force"
+          fi
+          conda run -n energy-forecasting \
+            energy-forecasting deploy retrain --price-only $FORCE_FLAG
+
+      - name: Upload new price models to Release
+        if: success()
+        run: |
+          gh release upload latest models/price/*.joblib models/ensemble_config.json \
+            --clobber 2>/dev/null || \
+          gh release create latest models/price/*.joblib models/ensemble_config.json \
+            --title "Production models" --notes "Auto-updated by CI retrain"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Commit updated ensemble config
+        if: success()
+        run: |
+          git config user.email "github-actions@github.com"
+          git config user.name "GitHub Actions"
+          git add models/ensemble_config.json
+          git diff --cached --quiet || \
+            git commit -m "ci: update ensemble_config after retrain [skip ci]"
+          git push

@@ -1,0 +1,95 @@
+name: Daily Forecast
+
+on:
+  schedule:
+    # 08:00 UTC = 09:00 CET / 10:00 CEST — after D+1 SMARD generation forecasts
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+
+jobs:
+  collect-data:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up conda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          environment-file: environment.yml
+          activate-environment: energy-forecasting
+          auto-activate-base: false
+
+      - name: Download models from Release
+        run: gh release download latest --dir models/ --clobber || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update data (SMARD + weather + commodities)
+        run: conda run -n energy-forecasting energy-forecasting update all
+
+      - name: Merge and process
+        run: conda run -n energy-forecasting energy-forecasting process
+
+      - name: Cache processed data
+        uses: actions/upload-artifact@v4
+        with:
+          name: processed-data-${{ github.run_id }}
+          path: data/processed/
+          retention-days: 1
+
+  inference:
+    needs: collect-data
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up conda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          environment-file: environment.yml
+          activate-environment: energy-forecasting
+          auto-activate-base: false
+
+      - name: Download models from Release
+        run: gh release download latest --dir models/ --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download processed data
+        uses: actions/download-artifact@v4
+        with:
+          name: processed-data-${{ github.run_id }}
+          path: data/processed/
+
+      - name: Run inference (skip data update)
+        run: conda run -n energy-forecasting energy-forecasting deploy forecast --skip-update
+
+      - name: Upload forecast outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: forecast-outputs-${{ github.run_id }}
+          path: deploy/data/
+          retention-days: 7
+
+  deploy:
+    needs: inference
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download forecast outputs
+        uses: actions/download-artifact@v4
+        with:
+          name: forecast-outputs-${{ github.run_id }}
+          path: deploy/data/
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./deploy
+          keep_files: false

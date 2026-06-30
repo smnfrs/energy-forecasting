@@ -1,4 +1,4 @@
-.PHONY: help env install lint format test mlflow serve clean data update data-smard data-weather data-commodities process features-slim features-full features-max features-validate train-gen-load train-gen-load-quick train-gen-load-target
+.PHONY: help env install lint format test mlflow serve clean data update data-smard data-weather data-commodities process features-slim features-full features-max features-validate train-gen-load train-gen-load-quick train-gen-load-target forecast export-models retrain retrain-gen-load sync
 
 CONDA_ENV ?= energy-forecasting
 
@@ -90,7 +90,26 @@ train-gen-load-quick:  ## Quick gen/load training (10 trials, for validation)
 train-gen-load-target:  ## Train one target (usage: make train-gen-load-target TARGET=wind_onshore)
 	energy-forecasting train gen-load --target $(TARGET) --trials 70
 
-# ── Stage 6+ targets (stubs, implemented in later stages) ───────────
-# forecast:   ## Run daily inference
-# retrain:    ## Full retrain pipeline
-# sync:       ## Pull latest data from GitHub Release
+# ── Stage 6 targets ─────────────────────────────────────────────────
+
+forecast:  ## Run full daily inference pipeline (data update → gen/load → price → output)
+	energy-forecasting deploy forecast
+
+forecast-skip-update:  ## Run inference only (skip data update, use existing data)
+	energy-forecasting deploy forecast --skip-update
+
+export-models:  ## Export production models from MLflow to disk (models/gen_load/, models/price/)
+	energy-forecasting deploy export-models
+
+gen-load-config:  ## Scan MLflow and write models/gen_load_config.json from best runs
+	energy-forecasting deploy gen-load-config
+
+retrain:  ## Retrain price ensemble from stored hyperparams (price only — CI-safe ~30-90 min)
+	energy-forecasting deploy retrain --price-only
+
+retrain-gen-load:  ## Full gen/load retrain detached (8-12 hours — runs on the tower)
+	setsid nohup bash -c 'energy-forecasting deploy retrain' </dev/null > logs/retrain_gen_load.log 2>&1 & \
+	disown && echo "Gen/load retrain PID=$$! — tail logs/retrain_gen_load.log"
+
+sync:  ## Pull latest models from GitHub Release
+	gh release download latest --dir models/ --clobber

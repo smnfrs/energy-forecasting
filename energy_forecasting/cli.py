@@ -498,6 +498,14 @@ def train_gen_load(
                     logger.exception(f"FAILED: historical_forecasts export for {t}/{r}")
                     failures.append(f"{t}/{r}/historical_forecasts")
 
+                try:
+                    best_base_id = _pick_best_base_run(t, r, base_run_metrics)
+                    if best_base_id:
+                        _write_gen_load_config(t, r, best_base_id)
+                except Exception:
+                    logger.exception(f"FAILED: gen_load_config.json write for {t}/{r}")
+                    failures.append(f"{t}/{r}/gen_load_config")
+
     # National aggregates for per-TSO targets — sum predictions across regions.
     # Mirrors EMA's `export_national_forecasts.py` collapse step.
     try:
@@ -882,3 +890,189 @@ def train_price(
         f"(holdout MAE={result['metrics']['mae']:.3f})"
     )
     logger.info(f"Config: {result['config_path']}")
+
+
+# ── gen_load_config.json helpers ────────────────────────────────────
+
+
+def _write_gen_load_config(target: str, region: str, run_id: str) -> None:
+    """Write/update this combo's entry in models/gen_load_config.json.
+
+    Loads best_config.json from the run's MLflow artifact and stores the
+    weather_config + dataset_params + run_id needed for inference.
+    """
+    import json
+    from datetime import datetime, timezone
+
+    import mlflow
+
+    from energy_forecasting.config import MLFLOW_TRACKING_URI, MODELS_DIR
+
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    client = mlflow.MlflowClient()
+    config_path = client.download_artifacts(run_id, "optuna/best_config.json")
+    with open(config_path) as f:
+        best_config = json.load(f)
+
+    config_file = MODELS_DIR / "gen_load_config.json"
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    if config_file.exists():
+        with open(config_file) as f:
+            gl_config = json.load(f)
+    else:
+        gl_config = {"generated_at": "", "combos": {}}
+
+    combo_key = f"{target}/{region}"
+    gl_config["combos"][combo_key] = {
+        "run_id": run_id,
+        "model_type": best_config["model_type"],
+        "model_params": best_config["model_params"],
+        "weather_config": best_config["weather_config"],
+        "dataset_params": best_config["dataset_params"],
+    }
+    gl_config["generated_at"] = (
+        datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    )
+    with open(config_file, "w") as f:
+        json.dump(gl_config, f, indent=2, default=str)
+    logger.info(f"Updated gen_load_config.json: {combo_key} → {run_id[:8]}")
+
+
+# ── Deploy commands ─────────────────────────────────────────────────
+
+deploy_app = typer.Typer(help="Inference, export and serving")
+app.add_typer(deploy_app, name="deploy")
+
+
+@deploy_app.command("gen-load-config")
+def gen_load_config_cmd(
+    force: bool = typer.Option(False, "--force", help="Overwrite existing entries"),
+):
+    """Scan MLflow for best gen/load runs and write models/gen_load_config.json.
+
+    Run this once after training to bootstrap the config file if the training
+    run that wrote it is no longer available.
+    """
+    import mlflow
+
+    from energy_forecasting.config import MLFLOW_TRACKING_URI
+    from energy_forecasting.config.modeling import GEN_LOAD_TARGETS
+
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+
+    from energy_forecasting.deploy.model_store import (
+        GEN_LOAD_CONFIG_PATH,
+        load_gen_load_config,
+    )
+
+    if GEN_LOAD_CONFIG_PATH.exists() and not force:
+        existing = load_gen_load_config()
+        logger.info(
+            f"gen_load_config.json already has {len(existing['combos'])} combos. "
+            "Use --force to overwrite."
+        )
+        return
+
+    for target, info in GEN_LOAD_TARGETS.items():
+        for region in info["regions"]:
+            from energy_forecasting.modeling.gen_load import _find_latest_base_run
+
+            model_types = ["LGBMRegressor", "XGBRegressor"]
+            run_ids = {}
+            for mt in model_types:
+                try:
+                    run_ids[mt] = _find_latest_base_run(target, region, mt)
+                except Exception:
+                    pass
+            if not run_ids:
+                logger.warning(f"No runs found for {target}/{region}, skipping")
+                continue
+            best_id = _pick_best_base_run(target, region, run_ids)
+            if best_id:
+                try:
+                    _write_gen_load_config(target, region, best_id)
+                except Exception:
+                    logger.exception(f"Failed for {target}/{region}")
+
+    logger.info("gen_load_config.json written.")
+
+
+@deploy_app.command("export-models")
+def export_models_cmd(
+    gen_load: bool = typer.Option(True, "--gen-load/--no-gen-load", help="Export gen/load models"),
+    price: bool = typer.Option(True, "--price/--no-price", help="Export price models"),
+):
+    """Export production models from MLflow to disk (models/gen_load/, models/price/)."""
+    from energy_forecasting.deploy.model_store import (
+        export_gen_load_models,
+        export_price_models,
+    )
+
+    if gen_load:
+        written = export_gen_load_models()
+        logger.info(f"Gen/load: {len(written)} models exported")
+    if price:
+        written = export_price_models()
+        logger.info(f"Price: {len(written)} models exported")
+
+
+@deploy_app.command("forecast")
+def forecast_cmd(
+    skip_update: bool = typer.Option(
+        False, "--skip-update", help="Skip data update (use existing data)"
+    ),
+):
+    """Run the full daily inference pipeline: update → gen/load → price → validate → write."""
+    from energy_forecasting.deploy.inference import run_inference
+
+    result = run_inference(skip_update=skip_update)
+    price_df = result["price"]
+    logger.info(
+        f"Forecast complete. Price: {len(price_df)} hours, "
+        f"mean={price_df['y_pred'].mean():.1f} EUR/MWh"
+    )
+
+
+@deploy_app.command("serve")
+def serve_cmd(
+    host: str = typer.Option("0.0.0.0", help="Host to bind"),
+    port: int = typer.Option(8000, help="Port to bind"),
+    reload: bool = typer.Option(False, "--reload", help="Enable auto-reload"),
+):
+    """Start the FastAPI forecast server."""
+    import uvicorn
+
+    uvicorn.run(
+        "energy_forecasting.api.app:app",
+        host=host,
+        port=port,
+        reload=reload,
+    )
+
+
+@deploy_app.command("retrain")
+def retrain_cmd(
+    price_only: bool = typer.Option(
+        False, "--price-only", help="Retrain only price models (not gen/load)"
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Retrain even if no degradation detected"
+    ),
+    holdout_days: int = typer.Option(
+        None, "--holdout-days", help="Override holdout days for degradation check"
+    ),
+):
+    """Retrain price ensemble. Gen/load retrain must be run manually (8-12 hours)."""
+    from energy_forecasting.deploy.retrain import run_retrain
+
+    result = run_retrain(price_only=price_only, force=force, holdout_days=holdout_days)
+    if result.get("needs_reselection"):
+        logger.warning(
+            "needs_reselection=True: new ensemble MAE degraded beyond threshold. "
+            "Run 'energy-forecasting train price --feature-selection' to reselect candidates."
+        )
+    else:
+        logger.info(
+            f"Retrain complete. New MAE: {result.get('new_mae', '?'):.3f}, "
+            f"previous: {result.get('old_mae', '?'):.3f}"
+        )
