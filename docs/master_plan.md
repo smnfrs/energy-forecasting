@@ -906,17 +906,38 @@ In addition to per-stage unit tests (which are expected as part of each stage's 
 - `make forecast` works locally
 
 ### Stage 6 Evaluation
-<!-- Fill in after stage 6 is complete -->
 
-**Status:** Not started
+**Status:** Complete (2026-06-30)
 
 **What was implemented:**
+- `deploy/model_store.py` — MLflow → joblib export/load for all production models; `gen_load_config.json` and `ensemble_config.json` path constants; `production_model_names()` for weight-filtered name list
+- `deploy/gen_load_inference.py` — wave-by-wave TSO inference (wind/solar → load → gen_load_diff); `_build_temporal_and_lag_features` with ffill approximation for h>24 lags; `_build_exog_features` chains previous wave outputs via TSO column names; `forecast_with_lags` / `forecast_direct` dispatch on `lags_target` in config; `aggregate_national` sums TSOs to DE_NATIONAL; `update_historical_forecasts` appends to per-(target,region) parquets
+- `deploy/price_inference.py` — extends merged dataset to D+1, builds per-version feature matrices, loads non-zero-weight base models, applies SLSQP weights, adds symmetric conformal PI from `conformal_quantile`
+- `deploy/validation.py` — `ForecastValidationError`; validates price (24h, [-500,3000] EUR/MWh, no NaN), generation (168h, non-negative, solar night check), load (168h, [10000,120000] MW); `validate_outputs` collects all errors before raising
+- `deploy/inference.py` — thin orchestrator: optional data update → gen/load inference → price inference → validation (hard fail) → publish
+- `deploy/publish.py` — writes `deploy/data/price_forecast.json`, rolling 30-day `forecast_history.json`, per-(target,region) gen/load JSONs, `model_metadata.json`, per-day `errors/{date}.json` with MAE/RMSE vs SMARD actuals
+- `deploy/retrain.py` — price retrain (CI-safe, ~30-90 min): per-model refit → SLSQP reoptimise → degradation guard → config update + export; gen/load retrain (manual detached only, 8-12h)
+- `api/app.py`, `api/routes.py`, `api/dependencies.py` — stateless FastAPI (7 endpoints: /health, /forecast/price, /forecast/generation/{type}, /forecast/load, /forecast/history, /models, /models/performance); reads pre-computed JSON from `deploy/data/`; CORSMiddleware allow_origins=["*"]
+- `cli.py` — `deploy` sub-group: `forecast`, `export-models`, `gen-load-config`, `serve`, `retrain`; `_write_gen_load_config` hook added to training loop to write best-run metadata after each (target, region)
+- `.github/workflows/daily_forecast.yml` — 08:00 UTC cron; 3 jobs: collect-data → inference → GitHub Pages deploy; downloads models from Release at start
+- `.github/workflows/retrain.yml` — 1st+15th monthly price retrain; 120-min timeout; uploads new models + commits updated `ensemble_config.json`
+- `Makefile` — `forecast`, `forecast-skip-update`, `export-models`, `gen-load-config`, `retrain`, `retrain-gen-load`, `sync` targets
+- 25 new tests: `test_deploy_validation.py` (16), `test_deploy_publish.py` (3), `test_api.py` (8) — full suite 490/495 pass (5 pre-existing failures in test_5c_derivations + fred_eu_gas gap)
 
 **Deviations from plan:**
+- `_write_gen_load_config` writes best **base** run (not ensemble meta-learner) to `gen_load_config.json` — simpler and avoids stacking complexity; ensemble only marginally beats single model for gen/load
+- Gen/load retrain stays strictly manual (detached `setsid nohup` on station); GitHub Actions limit of 6h is too short for 8-12h full retrain
+- Price feature matrices at inference reuse on-disk dataset columns as the feature list; no separate feature list artifact needed
 
 **Challenges encountered:**
+- Training/inference exog asymmetry: at training `_load_upstream_actuals` supplies SMARD ground-truth; at inference wave N provides previous wave's model outputs. Solved by matching TSO column naming convention (`wind_onshore_50hz`) from `_build_exog_features`.
+- TSO lag features require actuals beyond the 24-48h actuals window (h24 lag at hours 25+, d7_d2_avg at hours 49+). Solved with ffill approximation — known imprecision, documented.
+- Test timestamps for 168-hour gen/load forecasts: naive `f"{h:02d}:00:00"` format broke at h≥24. Fixed using `pd.date_range` in test fixture.
 
 **Insights for later stages:**
+- Stage 7 dashboard can start immediately — it reads from `deploy/data/` static JSON, already structured as `ForecastResponse`.
+- The `deploy/data/errors/{date}.json` files give daily MAE/RMSE; Stage 7's performance tab can consume these directly.
+- `conformal_quantile` in `ensemble_config.json` is the only PI tuning knob; if coverage drifts, recalibrate on a longer holdout window without retraining.
 
 ---
 
