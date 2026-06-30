@@ -42,7 +42,7 @@ from energy_forecasting.modeling.ensemble import (
     ensemble_config_dict,
     select_best_ensemble,
 )
-from energy_forecasting.modeling.mlflow_utils import TrackedRun
+from energy_forecasting.modeling.mlflow_utils import TrackedRun, ensure_mlflow_tracking
 from energy_forecasting.modeling.training import train_model
 from energy_forecasting.modeling.tuning import (
     PRICE_LINEAR_TYPES,
@@ -114,7 +114,8 @@ def _overlay_ema_forecasts(df: pd.DataFrame) -> pd.DataFrame:
 
     try:
         ema = load_gen_load_forecasts(
-            df.index, columns=[base_mapping[c] for c in targets],
+            df.index,
+            columns=[base_mapping[c] for c in targets],
         )
     except FileNotFoundError as exc:
         logger.warning(
@@ -128,9 +129,7 @@ def _overlay_ema_forecasts(df: pd.DataFrame) -> pd.DataFrame:
         ema_col = base_mapping[raw_col]
         mask = ema[ema_col].notna()
         if mask.any():
-            df.loc[mask, raw_col] = (
-                ema.loc[mask, ema_col].astype(df[raw_col].dtype).to_numpy()
-            )
+            df.loc[mask, raw_col] = ema.loc[mask, ema_col].astype(df[raw_col].dtype).to_numpy()
         overlay_counts[raw_col] = int(mask.sum())
 
     # Keep the wind+pv aggregate consistent with its upgraded components.
@@ -144,8 +143,7 @@ def _overlay_ema_forecasts(df: pd.DataFrame) -> pd.DataFrame:
         df[wind_pv_agg] = sum(df[c] for c in wind_pv_inputs)
 
     logger.info(
-        "EMA-forecast overlay applied: "
-        + ", ".join(f"{c}={n}" for c, n in overlay_counts.items())
+        "EMA-forecast overlay applied: " + ", ".join(f"{c}={n}" for c, n in overlay_counts.items())
     )
     return df
 
@@ -165,8 +163,7 @@ def prepare_price_dataset(
     """
     if feature_version not in FEATURE_LISTS:
         raise ValueError(
-            f"Unknown feature_version {feature_version!r}. "
-            f"Available: {sorted(FEATURE_LISTS)}"
+            f"Unknown feature_version {feature_version!r}. Available: {sorted(FEATURE_LISTS)}"
         )
 
     dataset_name = f"price_{feature_version}"
@@ -190,10 +187,7 @@ def prepare_price_dataset(
     cleaned = full.dropna()
     dropped = len(full) - len(cleaned)
     if dropped:
-        logger.info(
-            f"Dropped {dropped} warm-up rows with NaN features "
-            f"({len(cleaned)} remain)"
-        )
+        logger.info(f"Dropped {dropped} warm-up rows with NaN features ({len(cleaned)} remain)")
         cleaned.to_parquet(path)
     return path
 
@@ -279,6 +273,7 @@ def _train_winner(
 
 def _fetch_predictions(run_id: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Download OOF + holdout prediction parquets for one run."""
+    ensure_mlflow_tracking()
     client = mlflow.MlflowClient()
     artifact_dir = Path(client.download_artifacts(run_id, "predictions"))
     oof = pd.read_parquet(artifact_dir / "oof_predictions.parquet")
@@ -286,9 +281,9 @@ def _fetch_predictions(run_id: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     return oof, holdout
 
 
-def _stack_predictions(model_runs: list[_ModelRun]) -> tuple[
-    pd.DataFrame, pd.Series, pd.DataFrame, pd.Series
-]:
+def _stack_predictions(
+    model_runs: list[_ModelRun],
+) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
     """Assemble (preds_oof, y_oof, preds_holdout, y_holdout)."""
     oof_frames: dict[str, pd.DataFrame] = {}
     holdout_frames: dict[str, pd.DataFrame] = {}
@@ -374,6 +369,7 @@ def run_price_pipeline(
     if not feature_versions and not use_feature_selection and not precomputed_datasets:
         raise ValueError("feature_versions must list at least one entry")
 
+    ensure_mlflow_tracking()
     output_config = output_config or (MODELS_DIR / "ensemble_config.json")
 
     # 1. Datasets.
@@ -386,9 +382,7 @@ def run_price_pipeline(
     linear_fv_set: set[str] = set()
 
     if precomputed_datasets:
-        logger.info(
-            "=== Using precomputed datasets (skipping prep + feature selection) ==="
-        )
+        logger.info("=== Using precomputed datasets (skipping prep + feature selection) ===")
         for fv, path in precomputed_datasets.items():
             datasets[fv] = Path(path)
             tree_fv_set.add(fv)
@@ -429,7 +423,9 @@ def run_price_pipeline(
         for cand_name, cand_info in chosen:
             fv = f"fs_{cand_name}"
             datasets[fv] = prepare_subset_dataset(
-                max_path, cand_info["features"], name=fv,
+                max_path,
+                cand_info["features"],
+                name=fv,
             )
             tree_fv_set.add(fv)
             linear_fv_set.add(fv)
@@ -456,7 +452,8 @@ def run_price_pipeline(
         for mt in applicable_trees:
             try:
                 cfg = tune_tree_model(
-                    ds_path, mt,
+                    ds_path,
+                    mt,
                     feature_version=fv,
                     cv_folds=search_cv_folds,
                 )
@@ -466,7 +463,8 @@ def run_price_pipeline(
         for mt in applicable_linear:
             try:
                 cfg = tune_linear_model(
-                    ds_path, mt,
+                    ds_path,
+                    mt,
                     feature_version=fv,
                     cv_folds=search_cv_folds,
                 )
@@ -497,9 +495,7 @@ def run_price_pipeline(
             if cfg["cv_mae"] <= threshold:
                 pruned_winners[name] = cfg
             else:
-                logger.info(
-                    f"Pruning {name} (cv_mae={cfg['cv_mae']:.3f} > {threshold:.3f})"
-                )
+                logger.info(f"Pruning {name} (cv_mae={cfg['cv_mae']:.3f} > {threshold:.3f})")
     winners = pruned_winners
 
     # 3. Final retrain per winner — captures OOF + holdout preds. Same
@@ -509,12 +505,13 @@ def run_price_pipeline(
     for name, cfg in winners.items():
         fv = name.split("__")[-1]
         ds_path = datasets[fv]
-        logger.info(
-            f"=== Retraining winner {name} (cv_mae={cfg.get('cv_mae'):.3f}) ==="
-        )
+        logger.info(f"=== Retraining winner {name} (cv_mae={cfg.get('cv_mae'):.3f}) ===")
         try:
             run_id = _train_winner(
-                ds_path, cfg, feature_version=fv, cv_folds=validation_cv_folds,
+                ds_path,
+                cfg,
+                feature_version=fv,
+                cv_folds=validation_cv_folds,
             )
         except Exception as exc:  # noqa: BLE001 — keep overnight robust
             logger.error(f"_train_winner({name}) failed: {exc}")
@@ -551,11 +548,10 @@ def run_price_pipeline(
     ensemble_holdout_pred = ensemble.predict(preds_hold)
     conformal_quantile = calibrate_ensemble_intervals(y_hold, ensemble_holdout_pred)
     pi_lower, pi_upper = predict_ensemble_intervals(
-        ensemble_holdout_pred, conformal_quantile,
+        ensemble_holdout_pred,
+        conformal_quantile,
     )
-    coverage = float(np.mean(
-        (y_hold.to_numpy() >= pi_lower) & (y_hold.to_numpy() <= pi_upper)
-    ))
+    coverage = float(np.mean((y_hold.to_numpy() >= pi_lower) & (y_hold.to_numpy() <= pi_upper)))
     pi_width = float(np.mean(pi_upper - pi_lower))
     metrics["conformal_quantile"] = float(conformal_quantile)
     metrics["pi_coverage"] = coverage
@@ -584,7 +580,9 @@ def run_price_pipeline(
         dataset_name="ensemble_bakeoff",
         stage="production",
         ensemble_step="bakeoff",
-        feature_version="+".join(feature_versions) if feature_versions else "+".join(sorted(datasets)),
+        feature_version="+".join(feature_versions)
+        if feature_versions
+        else "+".join(sorted(datasets)),
         holdout_days=str(HOLDOUT_DAYS),
         cv_folds=str(validation_cv_folds),
         cv_mode="expanding",

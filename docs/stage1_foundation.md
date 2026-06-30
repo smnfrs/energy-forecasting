@@ -204,7 +204,7 @@ ENERGY_CHARTS_DIR = RAW_DATA_DIR / "energy_charts"
 
 # Models
 MODELS_DIR = PROJ_ROOT / "models"
-MLFLOW_DB_PATH = MODELS_DIR / "mlflow.db"
+MLFLOW_DB_PATH = PROJ_ROOT / "mlflow.db"
 MLFLOW_TRACKING_URI = f"sqlite:///{MLFLOW_DB_PATH.as_posix()}"
 
 # Deployment
@@ -750,7 +750,7 @@ test:  ## Run tests
 	pytest tests/ -v
 
 mlflow:  ## Start MLflow UI
-	mlflow ui --backend-store-uri sqlite:///models/mlflow.db --port 5000
+	mlflow ui --backend-store-uri sqlite:///mlflow.db --port 5000
 
 serve:  ## Start FastAPI dev server
 	uvicorn energy_forecasting.api.app:app --reload --port 8000

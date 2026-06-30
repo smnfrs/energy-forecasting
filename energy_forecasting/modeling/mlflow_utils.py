@@ -10,6 +10,7 @@ import mlflow
 import pandas as pd
 from loguru import logger
 
+from energy_forecasting.config import MLFLOW_TRACKING_URI
 from energy_forecasting.config.modeling import EXPERIMENTS
 
 # Tags set automatically — never provided manually
@@ -29,6 +30,11 @@ _REQUIRED_TAGS = {
     "stage": {"feature_selection", "model_training", "production"},
     "feature_version": None,  # any non-empty string
 }
+
+
+def ensure_mlflow_tracking() -> None:
+    """Use the repo-local MLflow backend consistently."""
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
 
 class TrackedRun:
@@ -52,6 +58,8 @@ class TrackedRun:
         self._run = None
 
     def __enter__(self):
+        ensure_mlflow_tracking()
+
         # Validate experiment name is in registry (strict — catches typos)
         if self.experiment not in EXPERIMENTS:
             raise ValueError(
@@ -75,8 +83,7 @@ class TrackedRun:
                 raise ValueError(f"Tag '{tag}' must be a non-empty string")
             if allowed is not None and value not in allowed:
                 raise ValueError(
-                    f"Tag '{tag}' has invalid value '{value}'. "
-                    f"Allowed: {sorted(allowed)}"
+                    f"Tag '{tag}' has invalid value '{value}'. Allowed: {sorted(allowed)}"
                 )
 
         # Set or create experiment
@@ -90,8 +97,7 @@ class TrackedRun:
         # Start run
         self._run = mlflow.start_run(tags=tags)
         logger.info(
-            f"Started MLflow run {self._run.info.run_id} "
-            f"in experiment '{experiment_path}'"
+            f"Started MLflow run {self._run.info.run_id} in experiment '{experiment_path}'"
         )
         return self._run
 
@@ -140,6 +146,7 @@ def get_best_run(
     Returns dict with keys: run_id, metrics, params, tags.
     Returns None if no matching runs found.
     """
+    ensure_mlflow_tracking()
     experiment_path = EXPERIMENTS.get(experiment_name, experiment_name)
     experiment = mlflow.get_experiment_by_name(experiment_path)
     if experiment is None:
@@ -200,6 +207,7 @@ def compare_models(
     Returns DataFrame with columns: model_class, best_{metric}, mean_{metric},
     std_{metric}, n_runs.
     """
+    ensure_mlflow_tracking()
     experiment_path = EXPERIMENTS.get(experiment_name, experiment_name)
     experiment = mlflow.get_experiment_by_name(experiment_path)
     if experiment is None:
@@ -232,6 +240,7 @@ def audit_experiment(experiment_name: str) -> pd.DataFrame:
 
     Returns DataFrame of flagged runs with reasons. Empty = all consistent.
     """
+    ensure_mlflow_tracking()
     experiment_path = EXPERIMENTS.get(experiment_name, experiment_name)
     experiment = mlflow.get_experiment_by_name(experiment_path)
     if experiment is None:
@@ -256,16 +265,19 @@ def audit_experiment(experiment_name: str) -> pd.DataFrame:
             values = runs[col].dropna().unique()
             if len(values) > 1:
                 for run_id in runs["run_id"]:
-                    issues.append({
-                        "run_id": run_id,
-                        "issue": f"inconsistent {tag}: {sorted(values)}",
-                    })
+                    issues.append(
+                        {
+                            "run_id": run_id,
+                            "issue": f"inconsistent {tag}: {sorted(values)}",
+                        }
+                    )
 
     return pd.DataFrame(issues)
 
 
 def archive_runs(run_ids: list[str], reason: str = "superseded"):
     """Tag runs as archived with a reason."""
+    ensure_mlflow_tracking()
     client = mlflow.MlflowClient()
     for run_id in run_ids:
         client.set_tag(run_id, "archived", "true")

@@ -61,7 +61,8 @@ class TimeSeriesSplitter:
         self.step_days = step_days
 
     def split(
-        self, index: pd.DatetimeIndex,
+        self,
+        index: pd.DatetimeIndex,
     ) -> Iterator[tuple[np.ndarray, np.ndarray]]:
         """Generate train/test index arrays.
 
@@ -155,9 +156,7 @@ def carve_holdout(
     """
     dates = index.normalize().unique().sort_values()
     if holdout_days >= len(dates):
-        raise ValueError(
-            f"holdout_days ({holdout_days}) >= total days ({len(dates)})"
-        )
+        raise ValueError(f"holdout_days ({holdout_days}) >= total days ({len(dates)})")
 
     holdout_start = dates[-holdout_days]
     pool_mask = index < holdout_start

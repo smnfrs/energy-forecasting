@@ -16,7 +16,7 @@ structural items from the review are resolved as of the 2026-05-29 run:
 | #5 Ridge/Lasso `log_shift`/`yeo_johnson` blow-ups | **Fixed** — `TARGET_TRANSFORMS = ["none"]` (`search_spaces.py:182`); transforms no longer in any grid. |
 | #3 Candidate-selection layer collapsed | **Fixed (2026-06-30)** — per-model-type pruning before retrain: within each model type, configs whose cv_mae exceeds the type's best by >20% are dropped. Cross-family diversity (linear vs tree) is untouched. (`price.py`, after tuning loop). |
 | #4 §5d artifacts (SHAP/RFECV curves) not logged | **Fixed (2026-06-30)** — SHAP ranking + cutoff curve saved to `data/processed/datasets/price_fs_shap_*.parquet` and logged to a `meta_shap` MLflow run; RFECV curve saved to `price_fs_rfecv_curve.parquet` and attached as artifact to the `rfecv_optimum` run. (`feature_selection.py`). |
-| #6 `compute_neg_price_stats` `min_periods=1` | **Fixed (2026-06-30)** — changed to `min_periods=window_30d / window_90d`; early rows now NaN instead of biased partial-window means. (`market.py:182-184`). |
+| #6 `compute_neg_price_stats` `min_periods=1` | **Fixed (2026-06-30)** — changed to expanding initially (`min_periods=1`) then rolling windows; early rows are numeric and depth is average positive below-zero magnitude. (`market.py:182-184`). |
 | #8 CatBoost `allow_writing_files` unset | **Fixed (2026-06-30)** — `allow_writing_files=False` added to `CatBoostRegressor(...)` in `tuning.py`. No more `catboost_info/` spam. |
 
 `max` is still a live linear-only candidate (`price.py:421`) and target

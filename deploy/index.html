@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DE-LU Energy Forecast</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div>
+      <h1 data-i18n="title">DE-LU Energy Forecast</h1>
+      <p class="subtitle" data-i18n="subtitle">Day-Ahead Electricity Price &amp; Generation/Load Prediction</p>
+    </div>
+    <div class="header-actions">
+      <a href="monitoring.html" class="nav-link" data-i18n="monitoring_link">Model Monitoring</a>
+      <button id="lang-toggle" class="lang-btn">DE</button>
+    </div>
+  </div>
+  <p class="last-updated">
+    <span data-i18n="last_updated">Last updated</span>:
+    <span id="last-updated-value">—</span>
+  </p>
+</header>
+
+<main>
+
+  <div id="reselection-warning" class="warning-banner" hidden>
+    <span data-i18n="reselection_warning">Model degradation detected. Manual reselection recommended.</span>
+  </div>
+
+  <!-- §1 Price Forecast -->
+  <section class="card">
+    <h2 data-i18n="forecast_chart_title">24-Hour Price Forecast</h2>
+    <p class="chart-label">
+      <span data-i18n="forecast_date">Delivery</span>: <span id="delivery-date">—</span>
+    </p>
+    <div id="forecast-chart"></div>
+  </section>
+
+  <!-- §2 Gen/Load National Overview -->
+  <section class="card">
+    <h2 data-i18n="gen_load_summary_title">Generation Mix &amp; Load — National (7 Days)</h2>
+    <div id="summary-chart"></div>
+  </section>
+
+  <!-- §3–6 Individual Gen/Load Cards -->
+  <section>
+    <h2 data-i18n="gen_load_section">Individual Generation &amp; Load Forecasts</h2>
+    <div class="forecast-cards-grid">
+
+      <details class="forecast-card" id="card-wind-onshore">
+        <summary data-i18n="forecast_detail_wind_onshore">Wind Onshore — 7-Day National Forecast</summary>
+        <div class="chart-body">
+          <div class="chart-container"></div>
+        </div>
+      </details>
+
+      <details class="forecast-card" id="card-wind-offshore">
+        <summary data-i18n="forecast_detail_wind_offshore">Wind Offshore — 7-Day National Forecast</summary>
+        <div class="chart-body">
+          <div class="chart-container"></div>
+        </div>
+      </details>
+
+      <details class="forecast-card" id="card-solar">
+        <summary data-i18n="forecast_detail_solar">Solar — 7-Day National Forecast</summary>
+        <div class="chart-body">
+          <div class="chart-container"></div>
+        </div>
+      </details>
+
+      <details class="forecast-card" id="card-load">
+        <summary data-i18n="forecast_detail_load">Load — 7-Day National Forecast</summary>
+        <div class="chart-body">
+          <div class="chart-container"></div>
+        </div>
+      </details>
+
+    </div>
+  </section>
+
+  <!-- §7 Forecast vs Actual -->
+  <section class="card">
+    <h2 data-i18n="history_chart_title">Forecast vs Actual — Price (30 Days)</h2>
+    <div id="history-chart"></div>
+  </section>
+
+  <!-- §8 Daily Error -->
+  <section class="card">
+    <h2 data-i18n="error_chart_title">Daily Forecast Error — Price (Last 7 Days)</h2>
+    <div id="error-chart"></div>
+  </section>
+
+</main>
+
+<footer>
+  <p>DE-LU Energy Forecast &middot; Data: <a href="https://smard.de" target="_blank" rel="noopener">SMARD</a></p>
+</footer>
+
+<script src="script.js"></script>
+</body>
+</html>

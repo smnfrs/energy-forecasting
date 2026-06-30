@@ -113,7 +113,7 @@ src/
 | All Makefile targets | `Makefile` — data, update, lint, format, train-baselines, blend, forecast, api, etc. |
 | Data documentation | `DATA.md` — comprehensive explanation of every column and data source |
 | Developer guidelines | `CLAUDE.md` |
-| MLflow database | `models/mlflow.db` (SQLite) |
+| MLflow database | `mlflow.db` (SQLite) |
 | Production models | `models/production/*.joblib` |
 
 ### Gotchas

@@ -117,9 +117,7 @@ def _prepare_working_df(df: pd.DataFrame, specs: list[FeatureSpec]) -> pd.DataFr
     neg_price_cols = {d for d in needed_derived if d.startswith("_derived_neg_price_")}
     if neg_price_cols:
         if "target_price" not in df.columns:
-            raise KeyError(
-                "neg_price_* features require 'target_price' in the input DataFrame."
-            )
+            raise KeyError("neg_price_* features require 'target_price' in the input DataFrame.")
         neg_stats = compute_neg_price_stats(df["target_price"])
         for col in neg_stats.columns:
             if col in neg_price_cols:

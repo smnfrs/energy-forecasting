@@ -1,10 +1,7 @@
 """Tests for the FastAPI endpoints using TestClient with mocked static data."""
 
 import json
-from datetime import datetime, timezone
-from pathlib import Path
 
-import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 

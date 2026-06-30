@@ -59,6 +59,7 @@ _SCALERS = {
 
 # ── Target transforms ────────────────────────────────────────────
 
+
 class _LogShiftTransformer(BaseEstimator, TransformerMixin):
     """log1p(y + shift) transform where shift = |min(y)| + 1 if y has negatives.
 
@@ -98,6 +99,7 @@ def _make_target_regressor(model, target_transform: str):
 
 # ── Pipeline builder ──────────────────────────────────────────────
 
+
 def build_pipeline(
     model,
     scaler: str = "standard",
@@ -125,6 +127,7 @@ def build_pipeline(
 
 # ── Sample weights ────────────────────────────────────────────────
 
+
 def compute_sample_weights(day_index: pd.Series, half_life_days: float) -> np.ndarray:
     """Exponential decay weights. w = exp(ln(2)/half_life × (t - t_max)).
 
@@ -141,6 +144,7 @@ def compute_sample_weights(day_index: pd.Series, half_life_days: float) -> np.nd
 
 
 # ── Core training function ────────────────────────────────────────
+
 
 def train_model(
     dataset_path: Path,
@@ -204,9 +208,7 @@ def train_model(
                 f"(diff: {len(X.index.symmetric_difference(X_test_alt.index))} rows)"
             )
         if list(X_test_alt.columns) != list(X.columns):
-            raise ValueError(
-                "test_dataset_path columns do not match dataset_path columns"
-            )
+            raise ValueError("test_dataset_path columns do not match dataset_path columns")
     else:
         X_test_alt = None
 
@@ -245,12 +247,14 @@ def train_model(
             mlflow.set_tag("cv_folds", str(cv.n_splits))
 
         # Log preprocessing params
-        mlflow.log_params({
-            "scaler": scaler,
-            "target_transform": target_transform,
-            "weight_half_life": str(weight_half_life),
-            "holdout_days": holdout_days,
-        })
+        mlflow.log_params(
+            {
+                "scaler": scaler,
+                "target_transform": target_transform,
+                "weight_half_life": str(weight_half_life),
+                "holdout_days": holdout_days,
+            }
+        )
 
         # ── CV evaluation (uses Pipeline for scaler routing) ───
         # When autoregressive lag columns are present, each fold predicts
@@ -290,20 +294,24 @@ def train_model(
                     cv_metrics_list.append(fold_metrics)
 
                     if collect_oof:
-                        oof_parts.append(pd.DataFrame(
-                            {"y_true": y_true_eval, "y_pred": y_pred_eval},
-                            index=X_test_fold.index[eval_mask],
-                        ))
+                        oof_parts.append(
+                            pd.DataFrame(
+                                {"y_true": y_true_eval, "y_pred": y_pred_eval},
+                                index=X_test_fold.index[eval_mask],
+                            )
+                        )
                 else:
                     y_pred_fold = fold_pipeline.predict(X_test_fold)
                     fold_metrics = calculate_metrics(y_test_fold, y_pred_fold)
                     cv_metrics_list.append(fold_metrics)
 
                     if collect_oof:
-                        oof_parts.append(pd.DataFrame(
-                            {"y_true": y_test_fold.values, "y_pred": y_pred_fold},
-                            index=X_test_fold.index,
-                        ))
+                        oof_parts.append(
+                            pd.DataFrame(
+                                {"y_true": y_test_fold.values, "y_pred": y_pred_fold},
+                                index=X_test_fold.index,
+                            )
+                        )
 
             cv_means = {
                 f"cv_{k}": float(np.mean([m[k] for m in cv_metrics_list]))
@@ -364,14 +372,17 @@ def train_model(
         elif pool_weights is None:
             # Simple path — Pipeline goes directly into MAPIE
             mapie_model = wrap_with_intervals(
-                clone(pipeline), confidence_level=confidence_level, cv=pi_cv_folds,
+                clone(pipeline),
+                confidence_level=confidence_level,
+                cv=pi_cv_folds,
             )
             mapie_model.fit_conformalize(X_pool, y_pool)
             # Holdout uses alt features when provided — model trained on
             # actual weather, evaluated on hist_forecast weather. Mirrors
             # production inference where features come from forecast weather.
             y_pred, y_lower, y_upper = predict_with_intervals(
-                mapie_model, X_holdout_test,
+                mapie_model,
+                X_holdout_test,
             )
             scaler_obj = None  # scaler is inside the Pipeline
         else:
@@ -382,13 +393,18 @@ def train_model(
 
             mapie_estimator = _make_target_regressor(clone(model), target_transform)
             mapie_model = wrap_with_intervals(
-                mapie_estimator, confidence_level=confidence_level, cv=pi_cv_folds,
+                mapie_estimator,
+                confidence_level=confidence_level,
+                cv=pi_cv_folds,
             )
             mapie_model.fit_conformalize(
-                X_pool_scaled, y_pool, fit_params={"sample_weight": pool_weights},
+                X_pool_scaled,
+                y_pool,
+                fit_params={"sample_weight": pool_weights},
             )
             y_pred, y_lower, y_upper = predict_with_intervals(
-                mapie_model, X_holdout_test_scaled,
+                mapie_model,
+                X_holdout_test_scaled,
             )
 
         # ── Holdout evaluation ─────────────────────────────────
@@ -403,7 +419,9 @@ def train_model(
 
         holdout_metrics = calculate_metrics(y_holdout_arr, y_pred_arr)
         peak_metrics = calculate_peak_metrics(
-            y_holdout_arr, y_pred_arr, index=eval_index,
+            y_holdout_arr,
+            y_pred_arr,
+            index=eval_index,
         )
 
         mlflow.log_metrics(holdout_metrics)
@@ -413,7 +431,9 @@ def train_model(
             pi_metrics: dict[str, float] = {}
         else:
             pi_metrics = calculate_pi_metrics(
-                np.asarray(y_holdout), y_lower, y_upper,
+                np.asarray(y_holdout),
+                y_lower,
+                y_upper,
             )
             mlflow.log_metrics(pi_metrics)
 
@@ -440,8 +460,12 @@ def train_model(
             )
         else:
             holdout_preds = pd.DataFrame(
-                {"y_true": y_holdout.values, "y_pred": y_pred,
-                 "y_lower": y_lower, "y_upper": y_upper},
+                {
+                    "y_true": y_holdout.values,
+                    "y_pred": y_pred,
+                    "y_lower": y_lower,
+                    "y_upper": y_upper,
+                },
                 index=X_holdout.index,
             )
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -460,8 +484,7 @@ def train_model(
         pi_cov = pi_metrics.get("pi_coverage")
         pi_str = f"{pi_cov:.2%}" if pi_cov is not None and np.isfinite(pi_cov) else "n/a"
         logger.info(
-            f"Run {run_id}: holdout MAE={holdout_metrics['mae']:.2f}, "
-            f"PI coverage={pi_str}"
+            f"Run {run_id}: holdout MAE={holdout_metrics['mae']:.2f}, PI coverage={pi_str}"
         )
 
     return run_id

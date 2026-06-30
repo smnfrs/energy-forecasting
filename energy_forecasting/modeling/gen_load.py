@@ -38,7 +38,6 @@ from energy_forecasting.config.modeling import (
     REGION_TO_TSO,
     SEARCH_CV_FOLDS,
     TARGET_WEATHER_TYPE,
-    VALIDATION_CV_FOLDS,
 )
 from energy_forecasting.config.search_spaces import (
     suggest_dataset_params,
@@ -61,7 +60,7 @@ from energy_forecasting.modeling.intervals import (
     predict_ensemble_intervals,
 )
 from energy_forecasting.modeling.metrics import calculate_metrics, calculate_pi_metrics
-from energy_forecasting.modeling.mlflow_utils import TrackedRun
+from energy_forecasting.modeling.mlflow_utils import TrackedRun, ensure_mlflow_tracking
 from energy_forecasting.modeling.training import _apply_scaler, _fit_scaler, train_model
 
 # With EMA-matching CV (weekly test folds), recursive CV uses full
@@ -115,9 +114,17 @@ def _load_national_tso_data() -> pd.DataFrame:
     load (national total), and gen_load_diff = sum(generation) - sum(load).
     """
     _GEN_PREFIXES = [
-        "wind_onshore", "wind_offshore", "solar", "biomass", "gas",
-        "hard_coal", "lignite", "pumped_storage", "hydro",
-        "other_renew", "other_conv",
+        "wind_onshore",
+        "wind_offshore",
+        "solar",
+        "biomass",
+        "gas",
+        "hard_coal",
+        "lignite",
+        "pumped_storage",
+        "hydro",
+        "other_renew",
+        "other_conv",
     ]
 
     per_type_totals: dict[str, pd.Series] = {}
@@ -157,7 +164,7 @@ def _load_national_tso_data() -> pd.DataFrame:
     total_gen = sum(per_type_totals.values())
 
     result = pd.DataFrame(index=common_idx)
-    result["gen_load_diff"] = (total_gen.loc[common_idx] - total_load.loc[common_idx])
+    result["gen_load_diff"] = total_gen.loc[common_idx] - total_load.loc[common_idx]
     # Include national totals for lag features in _compute_temporal_features
     result["load"] = total_load.loc[common_idx]
     for prefix, series in per_type_totals.items():
@@ -166,7 +173,9 @@ def _load_national_tso_data() -> pd.DataFrame:
 
 
 def _load_weather_data(
-    target: str, region: str, source: str = "history",
+    target: str,
+    region: str,
+    source: str = "history",
 ) -> pd.DataFrame:
     """Load weather data for ``target`` and ``region``.
 
@@ -349,10 +358,8 @@ def _build_features(
     y.name = f"{target}_{region}"
 
     # Combine weather + temporal + exog features
-    common_idx = (
-        weather_features.index
-        .intersection(temporal_features.index)
-        .intersection(y.dropna().index)
+    common_idx = weather_features.index.intersection(temporal_features.index).intersection(
+        y.dropna().index
     )
     if exog_features is not None and not exog_features.empty:
         common_idx = common_idx.intersection(exog_features.dropna(how="any").index)
@@ -426,9 +433,11 @@ def _make_model(model_type: str, params: dict, n_jobs: int = -1):
     """
     if model_type == "LGBMRegressor":
         from lightgbm import LGBMRegressor
+
         return LGBMRegressor(**params, verbosity=-1, n_jobs=n_jobs)
     elif model_type == "XGBRegressor":
         from xgboost import XGBRegressor
+
         return XGBRegressor(**params, verbosity=0, n_jobs=n_jobs)
     elif model_type == "ElasticNet":
         return ElasticNet(**params, max_iter=5000)
@@ -479,8 +488,13 @@ def _optuna_objective(
 
     # Build features with suggested weather config
     X, y, _ = _build_features(
-        df_weather, tso_df, target, region,
-        weather_config, lags_target, temporal_features,
+        df_weather,
+        tso_df,
+        target,
+        region,
+        weather_config,
+        lags_target,
+        temporal_features,
         exog_features=exog_features,
     )
 
@@ -536,13 +550,14 @@ def _optuna_objective(
             # 168 rows due to day-boundary alignment.
             predictor = _ScaledLogPredictor(fold_model, fold_scaler, log_target)
             y_pred_full, eval_mask = forecast_with_lags_windowed(
-                predictor, X_test, y_train, target_lag_columns,
+                predictor,
+                X_test,
+                y_train,
+                target_lag_columns,
                 window_size=DEFAULT_FORECAST_HORIZON,
                 sample_windows=None,
             )
-            y_true_raw = (
-                np.expm1(y_test.values) if log_target else y_test.values
-            )
+            y_true_raw = np.expm1(y_test.values) if log_target else y_test.values
             y_pred = y_pred_full[eval_mask]  # already raw-space
             y_test_eval = y_true_raw[eval_mask]
         else:
@@ -550,9 +565,7 @@ def _optuna_objective(
             y_pred = fold_model.predict(X_test_scaled)
             if log_target:
                 y_pred = np.expm1(y_pred)
-            y_test_eval = (
-                np.expm1(y_test) if log_target else np.asarray(y_test)
-            )
+            y_test_eval = np.expm1(y_test) if log_target else np.asarray(y_test)
 
         mae = float(np.mean(np.abs(y_test_eval - y_pred)))
         cv_maes.append(mae)
@@ -618,8 +631,16 @@ def train_gen_load_model(
     )
     study.optimize(
         lambda trial: _optuna_objective(
-            trial, df_weather, tso_df, target, region,
-            temporal_features, exog_features, model_type, cv_folds, holdout_days,
+            trial,
+            df_weather,
+            tso_df,
+            target,
+            region,
+            temporal_features,
+            exog_features,
+            model_type,
+            cv_folds,
+            holdout_days,
             n_jobs=n_jobs,
         ),
         n_trials=optuna_trials,
@@ -653,13 +674,18 @@ def train_gen_load_model(
         raise ValueError(f"No Optuna suggest function for model_type: {model_type}")
 
     run_id = _finalize_gen_load_training(
-        target=target, region=region, model_type=model_type,
-        weather_config=weather_config, ds_params=ds_params,
+        target=target,
+        region=region,
+        model_type=model_type,
+        weather_config=weather_config,
+        ds_params=ds_params,
         model_params=model_params,
-        df_weather=df_weather, tso_df=tso_df,
+        df_weather=df_weather,
+        tso_df=tso_df,
         temporal_features=temporal_features,
         exog_features=exog_features,
-        holdout_days=holdout_days, n_jobs=n_jobs,
+        holdout_days=holdout_days,
+        n_jobs=n_jobs,
         feature_version=f"optuna_{model_type.lower()}",
     )
 
@@ -671,6 +697,7 @@ def train_gen_load_model(
         "dataset_params": ds_params,
         "best_mae": best.value,
     }
+    ensure_mlflow_tracking()
     client = mlflow.MlflowClient()
     with tempfile.TemporaryDirectory() as tmpdir:
         trials_path = Path(tmpdir) / "trials.parquet"
@@ -709,8 +736,13 @@ def _finalize_gen_load_training(
     """
     # Build final features with winning config — actual weather (training).
     X, y, weather_features = _build_features(
-        df_weather, tso_df, target, region,
-        weather_config, ds_params["lags_target"], temporal_features,
+        df_weather,
+        tso_df,
+        target,
+        region,
+        weather_config,
+        ds_params["lags_target"],
+        temporal_features,
         exog_features=exog_features,
     )
 
@@ -721,8 +753,13 @@ def _finalize_gen_load_training(
     # continue to use actual weather (the standard EMA pattern).
     df_weather_hf = _load_weather_data(target, region, source="hist_forecast")
     X_test, _, _ = _build_features(
-        df_weather_hf, tso_df, target, region,
-        weather_config, ds_params["lags_target"], temporal_features,
+        df_weather_hf,
+        tso_df,
+        target,
+        region,
+        weather_config,
+        ds_params["lags_target"],
+        temporal_features,
         exog_features=exog_features,
     )
 
@@ -812,6 +849,7 @@ def _finalize_gen_load_training(
 
 def _log_best_config_artifact(run_id: str, config: dict) -> None:
     """Log a best_config.json artifact to ``run_id``."""
+    ensure_mlflow_tracking()
     client = mlflow.MlflowClient()
     with tempfile.TemporaryDirectory() as tmpdir:
         config_path = Path(tmpdir) / "best_config.json"
@@ -829,6 +867,7 @@ def _find_latest_base_run(target: str, region: str, model_type: str) -> str:
     StackingEnsemble runs (``feature_version='ensemble'``) are excluded.
     """
     experiment = _experiment_for_target(target)
+    ensure_mlflow_tracking()
     client = mlflow.MlflowClient()
     exp = client.get_experiment_by_name(EXPERIMENTS[experiment])
     if exp is None:
@@ -879,6 +918,7 @@ def retrain_gen_load_from_existing(
 
     # 1. Locate source run and load best_config.json
     source_run_id = _find_latest_base_run(target, region, model_type)
+    ensure_mlflow_tracking()
     client = mlflow.MlflowClient()
     config_path = client.download_artifacts(source_run_id, "optuna/best_config.json")
     with open(config_path) as f:
@@ -912,13 +952,18 @@ def retrain_gen_load_from_existing(
 
     # 3. Run the shared final-training pass
     run_id = _finalize_gen_load_training(
-        target=target, region=region, model_type=model_type,
-        weather_config=weather_config, ds_params=ds_params,
+        target=target,
+        region=region,
+        model_type=model_type,
+        weather_config=weather_config,
+        ds_params=ds_params,
         model_params=model_params,
-        df_weather=df_weather, tso_df=tso_df,
+        df_weather=df_weather,
+        tso_df=tso_df,
         temporal_features=temporal_features,
         exog_features=exog_features,
-        holdout_days=holdout_days, n_jobs=n_jobs,
+        holdout_days=holdout_days,
+        n_jobs=n_jobs,
         feature_version=f"optuna_{model_type.lower()}",
     )
 
@@ -958,6 +1003,7 @@ def ensemble_gen_load(
     6. If ensemble doesn't beat the best single model, fall back.
     7. Log to MLflow.
     """
+    ensure_mlflow_tracking()
     client = mlflow.MlflowClient()
 
     # Load OOF and holdout predictions from each base model
@@ -976,8 +1022,7 @@ def ensemble_gen_load(
 
         if not oof_path.exists():
             raise FileNotFoundError(
-                f"Run {run_id} has no OOF predictions. "
-                f"Re-train with collect_oof=True."
+                f"Run {run_id} has no OOF predictions. Re-train with collect_oof=True."
             )
 
         oof_dfs[model_class] = pd.read_parquet(oof_path)
@@ -1036,7 +1081,9 @@ def ensemble_gen_load(
 
     # Post-hoc conformal calibration for ensemble PI
     conformal_q = calibrate_ensemble_intervals(
-        np.asarray(y_meta_holdout), y_ensemble_pred, confidence_level,
+        np.asarray(y_meta_holdout),
+        y_ensemble_pred,
+        confidence_level,
     )
     y_lower, y_upper = predict_ensemble_intervals(y_ensemble_pred, conformal_q)
     pi_metrics = calculate_pi_metrics(np.asarray(y_meta_holdout), y_lower, y_upper)

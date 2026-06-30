@@ -17,18 +17,18 @@ indexed by D+1 delivery hour timestamps (local time, tz-naive to match merged.pa
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import timedelta
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from loguru import logger
 
-from energy_forecasting.config import MODELS_DIR, PROCESSED_DATA_DIR
+from energy_forecasting.config import PROCESSED_DATA_DIR
 from energy_forecasting.deploy.model_store import (
-    ENSEMBLE_CONFIG_PATH,
     load_ensemble_config,
     load_price_model,
+    load_price_model_scaler,
     production_model_names,
 )
 
@@ -79,10 +79,7 @@ def _extend_to_forecast_date(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Datetim
     feature_cols = [c for c in extended.columns if c != PRICE_TARGET]
     extended[feature_cols] = extended[feature_cols].ffill()
 
-    logger.info(
-        f"Extended merged dataset to {forecast_date}: "
-        f"{len(df)} → {len(extended)} rows"
-    )
+    logger.info(f"Extended merged dataset to {forecast_date}: {len(df)} → {len(extended)} rows")
     return extended, new_idx
 
 
@@ -105,7 +102,7 @@ def _build_feature_matrices(
 
     Returns dict of {feature_version: X_d1} where X_d1 is a 24-row DataFrame.
     """
-    from energy_forecasting.modeling.datasets import DATASET_DIR, find_dataset, load_dataset
+    from energy_forecasting.modeling.datasets import find_dataset
 
     result: dict[str, pd.DataFrame] = {}
     for fv in feature_versions:
@@ -116,7 +113,6 @@ def _build_feature_matrices(
             existing_df = pd.read_parquet(existing)
             # If the dataset already covers the D+1 timestamps, slice directly
             feature_cols = [c for c in existing_df.columns if not c.endswith("__target")]
-            target_cols = [c for c in existing_df.columns if c.endswith("__target")]
             if d1_index[-1] in existing_df.index and d1_index[0] in existing_df.index:
                 X_d1 = existing_df.loc[d1_index, feature_cols]
                 if not X_d1.isna().any(axis=None):
@@ -150,7 +146,6 @@ def _engineer_features_for_version(
         existing = pd.read_parquet(ds_path)
         feature_cols = [c for c in existing.columns if not c.endswith("__target")]
         # Use extend_features to add the new D+1 rows efficiently
-        from energy_forecasting.features.engine import extend_features
         # We need the feature list — recover from the existing dataset columns
         # by matching against the known feature DSL. Since we can't reconstruct the
         # exact DSL strings, we use the columns directly as a pass-through.
@@ -158,10 +153,9 @@ def _engineer_features_for_version(
         # re-derives the feature columns.
         # Try the most reliable path: use the full dataset
         from energy_forecasting.config.features import (
-            PRICE_FEATURES_FULL,
             PRICE_FEATURES_MAX,
-            PRICE_FEATURES_SLIM,
         )
+
         # Map feature_version back to feature list
         # feature_version names from stage 5c: fs_shap_top90, fs_rfecv_optimum, etc.
         # These are sub-datasets of MAX. The columns in the existing dataset
@@ -175,7 +169,7 @@ def _engineer_features_for_version(
         X_all = full_features[available]
         X_d1 = X_all.reindex(d1_index)
         logger.info(
-            f"Built {fv} features: {len(available)} columns, "
+            f"Built {feature_version} features: {len(available)} columns, "
             f"{X_d1.notna().all(axis=1).sum()}/{len(X_d1)} complete D+1 rows"
         )
         return X_d1
@@ -220,15 +214,11 @@ def run_price_inference(
 
     # Identify which feature_versions are needed (non-zero-weight models only)
     prod_names = set(production_model_names(ensemble_config))
-    model_entries = {
-        e["name"]: e for e in ensemble_config["models"] if e["name"] in prod_names
-    }
+    model_entries = {e["name"]: e for e in ensemble_config["models"] if e["name"] in prod_names}
     feature_versions_needed = {e["feature_version"] for e in model_entries.values()}
 
     # Build feature matrices
-    feature_matrices = _build_feature_matrices(
-        extended_df, d1_index, feature_versions_needed
-    )
+    feature_matrices = _build_feature_matrices(extended_df, d1_index, feature_versions_needed)
 
     # Run each production model
     weights = ensemble_config["ensemble"]["weights"]
@@ -245,13 +235,14 @@ def run_price_inference(
         if X_d1.isna().any(axis=None):
             n_bad = X_d1.isna().any(axis=1).sum()
             logger.warning(
-                f"{model_name}: {n_bad}/{len(X_d1)} rows have NaN features; "
-                "may degrade prediction"
+                f"{model_name}: {n_bad}/{len(X_d1)} rows have NaN features; may degrade prediction"
             )
 
         try:
             model = load_price_model(entry["run_id"])
-            y_pred = np.asarray(model.predict(X_d1))
+            scaler = load_price_model_scaler(entry["run_id"])
+            X_to_predict = scaler.transform(X_d1) if scaler is not None else X_d1
+            y_pred = np.asarray(model.predict(X_to_predict))
             predictions.append(y_pred)
             used_weights.append(weights[model_name])
             logger.debug(

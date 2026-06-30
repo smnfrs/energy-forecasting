@@ -46,19 +46,28 @@ def _file_path(target: str, region: str, root: Path | None = None) -> Path:
 def _align_tz(series: pd.Series, target_index: pd.DatetimeIndex) -> pd.Series:
     """Bring a source series's index tz into agreement with the target.
 
-    SMARD/Open-Meteo merged data is stored tz-naive but conventionally
-    represents UTC moments; the 5b artifacts are written tz-aware UTC.
-    Reindexing across the mismatch silently returns NaN, so normalise
-    before the lookup.
+    Merged price data is stored tz-naive and represents Europe/Berlin local
+    delivery time after DST normalisation. Stage 5b forecast artifacts are
+    usually tz-aware UTC. Reindexing across that mismatch silently returns
+    NaN, so convert aware artifacts to Europe/Berlin delivery time and strip
+    the timezone before lookup.
     """
     src_tz = series.index.tz
     dst_tz = target_index.tz
     if src_tz is None and dst_tz is None:
         return series
     if src_tz is not None and dst_tz is None:
-        return series.tz_convert("UTC").tz_localize(None)
+        local = series.tz_convert("Europe/Berlin").tz_localize(None)
+        if local.index.has_duplicates:
+            local = local.groupby(level=0).mean()
+        return local
     if src_tz is None and dst_tz is not None:
-        return series.tz_localize("UTC").tz_convert(dst_tz)
+        local = series.tz_localize(
+            "Europe/Berlin",
+            ambiguous="infer",
+            nonexistent="shift_forward",
+        )
+        return local.tz_convert(dst_tz)
     return series.tz_convert(dst_tz)
 
 
@@ -143,7 +152,6 @@ def _resolve_base_columns(requested: list[str]) -> list[str]:
                 base.append(col)
         else:
             raise ValueError(
-                f"Unknown gen/load forecast column {col!r}. "
-                f"Expected one of {_all_columns()}."
+                f"Unknown gen/load forecast column {col!r}. Expected one of {_all_columns()}."
             )
     return base

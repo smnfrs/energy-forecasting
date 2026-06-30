@@ -117,8 +117,7 @@ def shap_importance(model, X: pd.DataFrame) -> pd.Series:
         import shap
     except ImportError as exc:
         raise ImportError(
-            "shap is required for SHAP-based selection. "
-            "Install with: pip install shap"
+            "shap is required for SHAP-based selection. Install with: pip install shap"
         ) from exc
 
     explainer = shap.TreeExplainer(model)
@@ -266,10 +265,7 @@ def _evaluate_set_with_cv(
         model.fit(X.iloc[train_idx][feature_names], y.iloc[train_idx])
         preds = model.predict(X.iloc[test_idx][feature_names])
         fold_metrics.append(calculate_metrics(y.iloc[test_idx], preds))
-    return {
-        f"cv_{k}": float(np.mean([m[k] for m in fold_metrics]))
-        for k in fold_metrics[0]
-    }
+    return {f"cv_{k}": float(np.mean([m[k] for m in fold_metrics])) for k in fold_metrics[0]}
 
 
 def _log_candidate(
@@ -470,20 +466,25 @@ def run_feature_selection(
         else:
             rfecv_input_features = filtered
             logger.info(
-                f"RFECV starting from corr-filtered set "
-                f"(n={len(filtered)}, no SHAP narrowing)"
+                f"RFECV starting from corr-filtered set (n={len(filtered)}, no SHAP narrowing)"
             )
         try:
             rfecv_features, rfecv_curve = rfecv_select(
-                X_pool[rfecv_input_features], y_pool, cv_splitter,
+                X_pool[rfecv_input_features],
+                y_pool,
+                cv_splitter,
             )
             rfecv_curve_df = pd.DataFrame(
-                sorted(rfecv_curve.items()), columns=["n_features", "mae"],
+                sorted(rfecv_curve.items()),
+                columns=["n_features", "mae"],
             )
             rfecv_curve_df.to_parquet(
-                dataset_path.parent / "price_fs_rfecv_curve.parquet", index=False,
+                dataset_path.parent / "price_fs_rfecv_curve.parquet",
+                index=False,
             )
-            logger.info(f"Saved RFECV curve ({len(rfecv_curve_df)} points) to {dataset_path.parent}")
+            logger.info(
+                f"Saved RFECV curve ({len(rfecv_curve_df)} points) to {dataset_path.parent}"
+            )
             _record(
                 "rfecv_optimum",
                 rfecv_features,

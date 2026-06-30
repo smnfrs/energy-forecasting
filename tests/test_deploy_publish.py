@@ -1,14 +1,10 @@
-"""Tests for deploy/publish.py — JSON schema consistency with Pydantic models."""
+"""Tests for deploy/publish.py — JSON schema consistency and new Stage 7 functions."""
 
 import json
-import tempfile
-from datetime import datetime, timezone
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
-
 from energy_forecasting.api.schemas import ForecastResponse, HourlyForecast
 
 
@@ -110,3 +106,141 @@ def test_history_appends_and_trims(tmp_path, monkeypatch):
     assert history["count"] == 3  # trimmed to HISTORY_DAYS
     dates = [f["issued_at"][:10] for f in history["forecasts"]]
     assert "2026-06-28" not in dates  # oldest dropped
+
+
+# ── Stage 7 additions ─────────────────────────────────────────────────────────
+
+def _merged_parquet(path, n_days=32, partial_day=True):
+    """Write a merged.parquet with n_days complete days + optional partial tail."""
+    rows = []
+    base = pd.Timestamp("2026-05-30 00:00")
+    for d in range(n_days):
+        for h in range(24):
+            rows.append({"ts": base + pd.Timedelta(days=d, hours=h), "target_price": float(d * 100 + h)})
+    if partial_day:
+        rows.append({"ts": base + pd.Timedelta(days=n_days, hours=0), "target_price": 999.0})
+    df = pd.DataFrame(rows).set_index("ts")
+    df.to_parquet(path)
+    return df
+
+
+def test_write_actuals_filters_then_trims(tmp_path, monkeypatch):
+    """Complete days are filtered before trimming to 30; partial tail excluded."""
+    import energy_forecasting.deploy.publish as pub
+    import energy_forecasting.config as cfg_mod
+
+    data_dir = tmp_path / "processed"
+    data_dir.mkdir()
+    _merged_parquet(data_dir / "merged.parquet", n_days=32, partial_day=True)
+
+    monkeypatch.setattr(pub, "DEPLOY_DATA_DIR", tmp_path / "deploy")
+    monkeypatch.setattr(cfg_mod, "PROCESSED_DATA_DIR", data_dir)
+
+    pub.write_actuals()
+
+    data = json.loads((tmp_path / "deploy" / "actuals.json").read_text())
+    assert "days" in data and "count" in data
+    assert data["count"] == 30
+    for day in data["days"]:
+        assert len(day["prices"]) == 24
+
+
+def test_write_actuals_missing_parquet(tmp_path, monkeypatch):
+    """write_actuals returns silently if merged.parquet is absent."""
+    import energy_forecasting.deploy.publish as pub
+    import energy_forecasting.config as cfg_mod
+
+    monkeypatch.setattr(pub, "DEPLOY_DATA_DIR", tmp_path / "deploy")
+    monkeypatch.setattr(cfg_mod, "PROCESSED_DATA_DIR", tmp_path / "processed")
+
+    pub.write_actuals()  # must not raise
+
+    assert not (tmp_path / "deploy" / "actuals.json").exists()
+
+
+def test_write_errors_summary(tmp_path, monkeypatch):
+    """Aggregates errors/*.json sorted by date, takes last 30."""
+    import energy_forecasting.deploy.publish as pub
+
+    deploy_dir = tmp_path / "deploy"
+    errors_dir = deploy_dir / "errors"
+    errors_dir.mkdir(parents=True)
+
+    for date, mae, rmse in [("2026-06-28", 10.0, 16.0), ("2026-06-29", 11.0, 17.0)]:
+        (errors_dir / f"{date}.json").write_text(
+            json.dumps({"date": date, "mae": mae, "rmse": rmse})
+        )
+
+    monkeypatch.setattr(pub, "DEPLOY_DATA_DIR", deploy_dir)
+    monkeypatch.setattr(pub, "ERRORS_DIR", errors_dir)
+
+    pub.write_errors_summary()
+
+    summary = json.loads((deploy_dir / "errors_summary.json").read_text())
+    assert summary["dates"] == ["2026-06-28", "2026-06-29"]
+    assert summary["mae"] == [10.0, 11.0]
+    assert summary["rmse"] == [16.0, 17.0]
+
+
+def test_write_errors_summary_trims_to_30(tmp_path, monkeypatch):
+    """Only last 30 date-named error files are included."""
+    import energy_forecasting.deploy.publish as pub
+
+    deploy_dir = tmp_path / "deploy"
+    errors_dir = deploy_dir / "errors"
+    errors_dir.mkdir(parents=True)
+
+    base = pd.Timestamp("2026-05-01")
+    for i in range(35):
+        date = (base + pd.Timedelta(days=i)).strftime("%Y-%m-%d")
+        (errors_dir / f"{date}.json").write_text(
+            json.dumps({"date": date, "mae": float(i), "rmse": float(i * 1.5)})
+        )
+
+    monkeypatch.setattr(pub, "DEPLOY_DATA_DIR", deploy_dir)
+    monkeypatch.setattr(pub, "ERRORS_DIR", errors_dir)
+
+    pub.write_errors_summary()
+
+    summary = json.loads((deploy_dir / "errors_summary.json").read_text())
+    assert len(summary["dates"]) == 30
+    assert summary["dates"][0] == "2026-05-06"  # oldest 5 dropped
+
+
+def test_write_outputs_always_calls_errors_summary(tmp_path, monkeypatch):
+    """write_outputs rebuilds errors_summary.json unconditionally."""
+    import energy_forecasting.deploy.publish as pub
+    import energy_forecasting.deploy.model_store as ms
+
+    deploy_dir = tmp_path / "deploy"
+    errors_dir = deploy_dir / "errors"
+    errors_dir.mkdir(parents=True)
+    (errors_dir / "2026-06-29.json").write_text(
+        json.dumps({"date": "2026-06-29", "mae": 9.9, "rmse": 15.5})
+    )
+
+    monkeypatch.setattr(pub, "DEPLOY_DATA_DIR", deploy_dir)
+    monkeypatch.setattr(pub, "PRICE_FORECAST_PATH", deploy_dir / "price_forecast.json")
+    monkeypatch.setattr(pub, "HISTORY_PATH", deploy_dir / "forecast_history.json")
+    monkeypatch.setattr(pub, "METADATA_PATH", deploy_dir / "model_metadata.json")
+    monkeypatch.setattr(pub, "GEN_LOAD_DATA_DIR", deploy_dir / "gen_load")
+    monkeypatch.setattr(pub, "ERRORS_DIR", errors_dir)
+
+    import energy_forecasting.config as cfg_mod
+    monkeypatch.setattr(cfg_mod, "PROCESSED_DATA_DIR", tmp_path / "processed")
+
+    fake_config = {
+        "ensemble": {"method": "slsqp_optimized", "weights": {}},
+        "models": [],
+        "conformal_quantile": 24.4,
+        "pi_coverage": 0.9,
+        "metrics": {"mae": 11.1, "rmse": 18.2},
+    }
+    monkeypatch.setattr(ms, "load_ensemble_config", lambda: fake_config)
+    monkeypatch.setattr(ms, "production_model_names", lambda c: [])
+
+    pub.write_outputs(_price_df(), {}, issued_at="2026-06-30T08:00:00Z")
+
+    assert (deploy_dir / "errors_summary.json").exists()
+    summary = json.loads((deploy_dir / "errors_summary.json").read_text())
+    assert summary["dates"] == ["2026-06-29"]

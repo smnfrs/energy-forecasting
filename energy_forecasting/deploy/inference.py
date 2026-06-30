@@ -24,22 +24,21 @@ def _update_data() -> None:
     from energy_forecasting.data.sources import EnergyChartsSource, SmardSource
     from energy_forecasting.data.weather import OpenMeteoSource
 
-    smard_tasks = (
-        [(SmardSource(r).update, f"SMARD/{r}") for r in NATIONAL_REGIONS]
-        + [(SmardSource(t).update, f"SMARD/{t}") for t in TSO_REGIONS]
-    )
+    smard_tasks = [(SmardSource(r).update, f"SMARD/{r}") for r in NATIONAL_REGIONS] + [
+        (SmardSource(t).update, f"SMARD/{t}") for t in TSO_REGIONS
+    ]
     weather_tasks = [
         (OpenMeteoSource(at, t).update, f"weather/{at}/{t}")
         for at in ["offshore", "onshore", "solar", "cities"]
         for t in TSO_REGIONS
         if OpenMeteoSource(at, t).locations
     ]
-    other_tasks = (
-        [(s.update, type(s).__name__) for s in all_commodity_sources()]
-        + [(EnergyChartsSource().update, "EnergyCharts")]
-    )
+    other_tasks = [(s.update, type(s).__name__) for s in all_commodity_sources()] + [
+        (EnergyChartsSource().update, "EnergyCharts")
+    ]
 
     from concurrent.futures import ThreadPoolExecutor, as_completed
+
     from energy_forecasting.data.weather import RateLimitExhausted
 
     def _par(tasks, max_workers):
@@ -61,8 +60,6 @@ def _update_data() -> None:
             except Exception:
                 logger.exception(f"Failed: {name}")
 
-    from concurrent.futures import ProcessPoolExecutor
-
     with ThreadPoolExecutor(max_workers=3) as pool:
         futs = [
             pool.submit(_par, smard_tasks, len(smard_tasks)),
@@ -76,11 +73,11 @@ def _update_data() -> None:
 def _merge_and_process() -> None:
     """Rerun the merge pipeline on updated raw data."""
     from energy_forecasting.config import PROCESSED_DATA_DIR
-    from energy_forecasting.data.merge import build_merged_dataset
+    from energy_forecasting.data.merge import run_merge_pipeline
 
     logger.info("Rebuilding merged dataset...")
-    out = build_merged_dataset(output_path=PROCESSED_DATA_DIR / "merged.parquet")
-    logger.info(f"Merged dataset rebuilt: {out}")
+    run_merge_pipeline(output_path=PROCESSED_DATA_DIR / "merged.parquet")
+    logger.info("Merged dataset rebuilt")
 
 
 def run_inference(skip_update: bool = False) -> dict:
@@ -147,8 +144,7 @@ def run_inference(skip_update: bool = False) -> dict:
 
     if errors:
         logger.warning(
-            f"Pipeline complete with {len(errors)} non-fatal error(s): "
-            f"{list(errors.keys())}"
+            f"Pipeline complete with {len(errors)} non-fatal error(s): {list(errors.keys())}"
         )
     else:
         logger.info("Daily inference pipeline complete")

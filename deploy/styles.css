@@ -1,0 +1,243 @@
+/* ── Reset & base ─────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: #f8f9fa;
+  color: #343a40;
+  line-height: 1.5;
+}
+
+a { color: #3B82F6; }
+a:hover { text-decoration: underline; }
+
+/* ── Header ───────────────────────────────────────────────────────────────── */
+header {
+  background: #fff;
+  border-bottom: 1px solid #dee2e6;
+  padding: 1rem 1.5rem 0.75rem;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.header-inner {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+h1 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #212529;
+  letter-spacing: -0.01em;
+}
+
+.subtitle {
+  color: #6c757d;
+  font-size: 0.85rem;
+  margin-top: 0.15rem;
+}
+
+.last-updated {
+  font-size: 0.78rem;
+  color: #868e96;
+  margin-top: 0.4rem;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-shrink: 0;
+  padding-top: 0.1rem;
+}
+
+.nav-link {
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-decoration: none;
+  color: #3B82F6;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  white-space: nowrap;
+}
+.nav-link:hover { background: #dbeafe; text-decoration: none; }
+
+.lang-btn {
+  background: #e9ecef;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  padding: 0.25rem 0.55rem;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #495057;
+}
+.lang-btn:hover { background: #dee2e6; }
+
+/* ── Main layout ──────────────────────────────────────────────────────────── */
+main {
+  max-width: 1200px;
+  margin: 1.5rem auto;
+  padding: 0 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* ── Cards ────────────────────────────────────────────────────────────────── */
+.card {
+  background: #fff;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  padding: 1.2rem 1.4rem 1.4rem;
+}
+
+.card h2, section > h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #343a40;
+  margin-bottom: 0.9rem;
+}
+
+.chart-label {
+  font-size: 0.82rem;
+  color: #6c757d;
+  margin-bottom: 0.5rem;
+}
+
+/* ── Warning banner ───────────────────────────────────────────────────────── */
+.warning-banner {
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 6px;
+  padding: 0.7rem 1rem;
+  color: #856404;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+/* ── Placeholder ──────────────────────────────────────────────────────────── */
+.no-data {
+  color: #6c757d;
+  font-size: 0.88rem;
+  padding: 2rem 0;
+  text-align: center;
+}
+
+/* ── Gen/load national summary chart ─────────────────────────────────────── */
+#summary-chart { min-height: 350px; }
+
+/* ── Individual gen/load cards ────────────────────────────────────────────── */
+details.forecast-card {
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+details.forecast-card > summary {
+  padding: 0.85rem 1.2rem;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #343a40;
+  list-style: none;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+details.forecast-card > summary::-webkit-details-marker { display: none; }
+details.forecast-card > summary::before {
+  content: "▶";
+  display: inline-block;
+  transition: transform 0.18s;
+  font-size: 0.7rem;
+  color: #6c757d;
+  flex-shrink: 0;
+}
+details.forecast-card[open] > summary::before { transform: rotate(90deg); }
+
+details.forecast-card .chart-body {
+  padding: 0.75rem 1.2rem 1.2rem;
+  border-top: 1px solid #f1f3f5;
+}
+
+/* Two-column grid for gen/load cards on wider screens */
+.forecast-cards-grid { display: flex; flex-direction: column; gap: 0.75rem; }
+
+@media (min-width: 820px) {
+  .forecast-cards-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+}
+
+/* ── TSO toggle controls ──────────────────────────────────────────────────── */
+.tso-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0 0 0.75rem;
+}
+
+.tso-controls label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+  padding: 0.2rem 0.5rem;
+  border-radius: 3px;
+  border: 1px solid #dee2e6;
+  background: #f8f9fa;
+  user-select: none;
+}
+.tso-controls label:hover { background: #e9ecef; }
+.tso-controls input[type="checkbox"] { cursor: pointer; }
+
+/* ── Info panel (monitoring) ──────────────────────────────────────────────── */
+.info-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2rem;
+  margin-top: 1rem;
+  font-size: 0.875rem;
+  color: #495057;
+  padding-top: 0.9rem;
+  border-top: 1px solid #f1f3f5;
+}
+.info-panel .info-item strong { color: #343a40; }
+
+/* ── Retrain log table ────────────────────────────────────────────────────── */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+th {
+  text-align: left;
+  padding: 0.45rem 0.75rem;
+  border-bottom: 2px solid #dee2e6;
+  font-weight: 600;
+  color: #343a40;
+  white-space: nowrap;
+}
+td {
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid #f1f3f5;
+  color: #495057;
+}
+tr:last-child td { border-bottom: none; }
+
+/* ── Footer ───────────────────────────────────────────────────────────────── */
+footer {
+  text-align: center;
+  padding: 1.5rem 1rem;
+  color: #adb5bd;
+  font-size: 0.78rem;
+}
+footer a { color: #adb5bd; }

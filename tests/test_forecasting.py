@@ -75,19 +75,25 @@ class TestExtractLag:
 class TestFindTargetLagColumns:
     def test_matches_target_prefix(self):
         cols = [
-            "wind_onshore_h1", "wind_onshore_h2", "wind_onshore_h12",
+            "wind_onshore_h1",
+            "wind_onshore_h2",
+            "wind_onshore_h12",
             "gen_wind_on_h24",  # TSO feature — different prefix
             "load_h24",  # TSO feature
             "hour_sin",
         ]
         assert find_target_lag_columns(cols, "wind_onshore") == [
-            "wind_onshore_h1", "wind_onshore_h2", "wind_onshore_h12",
+            "wind_onshore_h1",
+            "wind_onshore_h2",
+            "wind_onshore_h12",
         ]
 
     def test_sorts_by_lag_hour(self):
         cols = ["load_h12", "load_h1", "load_h6"]
         assert find_target_lag_columns(cols, "load") == [
-            "load_h1", "load_h6", "load_h12",
+            "load_h1",
+            "load_h6",
+            "load_h12",
         ]
 
     def test_ignores_non_digit_suffix(self):
@@ -127,7 +133,10 @@ class TestForecastWithLags:
 
         y_train = pd.Series([1.0, 2.0, 3.0])
         result = forecast_with_lags(
-            ConstModel(), X_test, y_train, ["target_h1"],
+            ConstModel(),
+            X_test,
+            y_train,
+            ["target_h1"],
         )
 
         assert list(result["fitted"].values) == [42.0, 42.0, 42.0, 42.0, 42.0]
@@ -153,7 +162,10 @@ class TestForecastWithLags:
 
         y_train = pd.Series([1.0, 2.0, 7.0])
         result = forecast_with_lags(
-            EchoLagModel(), X_test, y_train, ["target_h1"],
+            EchoLagModel(),
+            X_test,
+            y_train,
+            ["target_h1"],
         )
         # Row 0: lag_1 = 7.0 (from pre-fill), predicts 7.0
         # Row 1: lag_1 overwritten to 7.0, predicts 7.0
@@ -185,11 +197,16 @@ class TestForecastWithLagsWindowed:
         """sample_windows=None covers every non-overlapping window."""
         idx = pd.date_range("2024-06-01", periods=10, freq="h")
         X = pd.DataFrame(
-            {"target_h1": np.arange(10, dtype=float)}, index=idx,
+            {"target_h1": np.arange(10, dtype=float)},
+            index=idx,
         )
         y_pred, mask = forecast_with_lags_windowed(
-            self._make_const_model(7.0), X, pd.Series([1.0, 2.0]),
-            ["target_h1"], window_size=3, sample_windows=None,
+            self._make_const_model(7.0),
+            X,
+            pd.Series([1.0, 2.0]),
+            ["target_h1"],
+            window_size=3,
+            sample_windows=None,
         )
         # 10 rows / 3 window_size = 3 full windows, last row (index 9) dropped
         assert mask.sum() == 9
@@ -200,11 +217,16 @@ class TestForecastWithLagsWindowed:
         """sample_windows=1 picks the most recent window (most realistic)."""
         idx = pd.date_range("2024-06-01", periods=12, freq="h")
         X = pd.DataFrame(
-            {"target_h1": np.arange(12, dtype=float)}, index=idx,
+            {"target_h1": np.arange(12, dtype=float)},
+            index=idx,
         )
         y_pred, mask = forecast_with_lags_windowed(
-            self._make_const_model(9.0), X, pd.Series([1.0]),
-            ["target_h1"], window_size=4, sample_windows=1,
+            self._make_const_model(9.0),
+            X,
+            pd.Series([1.0]),
+            ["target_h1"],
+            window_size=4,
+            sample_windows=1,
         )
         # 12 rows / 4 = 3 possible windows; window 2 is the last (rows 8..11)
         assert mask.sum() == 4
@@ -229,8 +251,12 @@ class TestForecastWithLagsWindowed:
                 return X["target_h1"].values
 
         y_pred, mask = forecast_with_lags_windowed(
-            EchoLagModel(), X, pd.Series([1.0]),
-            ["target_h1"], window_size=3, sample_windows=None,
+            EchoLagModel(),
+            X,
+            pd.Series([1.0]),
+            ["target_h1"],
+            window_size=3,
+            sample_windows=None,
         )
         # Window 1 (rows 0..2): seed 100 — echo stays 100 throughout.
         # Window 2 (rows 3..5): seed 200 — fresh start, echo 200 throughout.
@@ -240,8 +266,12 @@ class TestForecastWithLagsWindowed:
         idx = pd.date_range("2024-06-01", periods=0, freq="h")
         X = pd.DataFrame({"target_h1": []}, index=idx)
         y_pred, mask = forecast_with_lags_windowed(
-            self._make_const_model(), X, pd.Series([1.0]),
-            ["target_h1"], window_size=3, sample_windows=None,
+            self._make_const_model(),
+            X,
+            pd.Series([1.0]),
+            ["target_h1"],
+            window_size=3,
+            sample_windows=None,
         )
         assert len(y_pred) == 0
         assert mask.sum() == 0
@@ -251,6 +281,9 @@ class TestForecastWithLagsWindowed:
         X = pd.DataFrame({"f": np.zeros(3)}, index=idx)
         with pytest.raises(ValueError, match="lag_columns"):
             forecast_with_lags_windowed(
-                self._make_const_model(), X, pd.Series([1.0]),
-                [], window_size=3,
+                self._make_const_model(),
+                X,
+                pd.Series([1.0]),
+                [],
+                window_size=3,
             )

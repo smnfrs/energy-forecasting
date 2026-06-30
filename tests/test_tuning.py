@@ -12,7 +12,6 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
-
 from energy_forecasting.modeling.cv import TimeSeriesSplitter
 from energy_forecasting.modeling.tuning import (
     PRICE_LINEAR_TYPES,
@@ -21,7 +20,6 @@ from energy_forecasting.modeling.tuning import (
     _linear_search_space,
     _make_model,
 )
-
 
 # ── Model factory ────────────────────────────────────────────────
 
@@ -64,6 +62,7 @@ def test_linear_search_space_ridge_two_dims():
         LINEAR_ALPHA_GRID,
         LINEAR_PREPROCESSING_GRID,
     )
+
     assert len(space["preproc_idx"]) == len(LINEAR_PREPROCESSING_GRID)
     assert len(space["alpha_idx"]) == len(LINEAR_ALPHA_GRID["Ridge"])
 
@@ -103,7 +102,9 @@ def test_evaluate_config_returns_cv_prefixed_metrics(tiny_xy):
     X, y = tiny_xy
     cv = TimeSeriesSplitter(n_splits=3, mode="expanding")
     metrics = _evaluate_config(
-        X, y, cv,
+        X,
+        y,
+        cv,
         model_type="Ridge",
         model_params={"alpha": 0.1},
         scaler="standard",
@@ -120,7 +121,9 @@ def test_evaluate_config_applies_weight_half_life(tiny_xy):
     cv = TimeSeriesSplitter(n_splits=3, mode="expanding")
     # Without weights
     m_no_w = _evaluate_config(
-        X, y, cv,
+        X,
+        y,
+        cv,
         model_type="Ridge",
         model_params={"alpha": 0.1},
         scaler="standard",
@@ -129,7 +132,9 @@ def test_evaluate_config_applies_weight_half_life(tiny_xy):
     )
     # With weights (short half-life — recent data dominates)
     m_w = _evaluate_config(
-        X, y, cv,
+        X,
+        y,
+        cv,
         model_type="Ridge",
         model_params={"alpha": 0.1},
         scaler="standard",
@@ -145,7 +150,9 @@ def test_evaluate_config_tree_with_none_scaler(tiny_xy):
     X, y = tiny_xy
     cv = TimeSeriesSplitter(n_splits=3, mode="expanding")
     metrics = _evaluate_config(
-        X, y, cv,
+        X,
+        y,
+        cv,
         model_type="LGBMRegressor",
         model_params={"n_estimators": 50},
         scaler="none",

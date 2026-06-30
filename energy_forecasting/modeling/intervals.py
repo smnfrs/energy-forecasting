@@ -46,6 +46,7 @@ def predict_with_intervals(
 
 # ── Ensemble intervals (post-hoc conformal) ───────────────────────
 
+
 def calibrate_ensemble_intervals(
     y_true: ArrayLike,
     y_pred: ArrayLike,

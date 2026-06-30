@@ -50,12 +50,7 @@ def climatological_baseline(
         for idx in group_idx:
             ts = y.index[idx]
             lookback_start = ts - window
-            mask = (
-                (y.index >= lookback_start)
-                & (y.index < ts)
-                & (hours == hour)
-                & (dows == dow)
-            )
+            mask = (y.index >= lookback_start) & (y.index < ts) & (hours == hour) & (dows == dow)
             vals = y[mask]
             if len(vals) > 0:
                 result.iloc[idx] = vals.mean()

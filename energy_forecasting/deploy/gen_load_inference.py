@@ -14,8 +14,6 @@ Feature reconstruction mirrors training exactly:
 
 from __future__ import annotations
 
-import json
-from datetime import date
 from pathlib import Path
 
 import numpy as np
@@ -24,8 +22,6 @@ from loguru import logger
 
 from energy_forecasting.config import (
     HISTORICAL_FORECASTS_DIR,
-    MODELS_DIR,
-    PROCESSED_DATA_DIR,
     RAW_DATA_DIR,
 )
 from energy_forecasting.config.locations import locations_for_tso
@@ -68,6 +64,8 @@ def _load_tso_data(region: str) -> pd.DataFrame:
     """Load TSO parquet (or aggregate national) for lag feature seeding."""
     from energy_forecasting.modeling.gen_load import (
         _load_national_tso_data,
+    )
+    from energy_forecasting.modeling.gen_load import (
         _load_tso_data as _training_load_tso,
     )
 
@@ -79,6 +77,7 @@ def _load_tso_data(region: str) -> pd.DataFrame:
 def _get_target_col(target: str, region: str) -> str:
     """Target column name inside the TSO parquet."""
     from energy_forecasting.modeling.gen_load import _get_target_col as _training_get
+
     return _training_get(target, region)
 
 
@@ -101,7 +100,6 @@ def _load_forecast_weather(target: str, region: str) -> pd.DataFrame:
 
 def _get_locations(target: str, region: str) -> list:
     """Location list for weather FE class, matching training."""
-    from energy_forecasting.config.locations import locations_for_tso
 
     weather_type = TARGET_WEATHER_TYPE[target]
     if region == "DE_NATIONAL":
@@ -192,6 +190,25 @@ def _build_target_lag_seed(
     return cols
 
 
+def _solar_elevation_mask(index: pd.DatetimeIndex) -> np.ndarray:
+    """Return True where the sun is above the horizon for Germany.
+
+    Uses approximate solar position for Germany's centre (51.2°N, 10.4°E).
+    Accounts for seasonal DST variation — index must be UTC-aware or UTC-naive
+    in the sense that hours are UTC hours.
+    """
+    lat, lon = 51.2, 10.4
+    utc_hours = index.hour + index.minute / 60.0
+    doy = index.day_of_year
+    decl = np.radians(23.45 * np.sin(np.radians(360.0 / 365.0 * (doy - 81))))
+    hour_angle = np.radians(15.0 * (utc_hours + lon / 15.0 - 12.0))
+    elev = np.arcsin(
+        np.sin(np.radians(lat)) * np.sin(decl)
+        + np.cos(np.radians(lat)) * np.cos(decl) * np.cos(hour_angle)
+    )
+    return np.asarray(elev > 0)
+
+
 def _build_exog_features(
     target: str,
     exog_forecasts: dict[tuple[str, str], pd.DataFrame] | None,
@@ -257,9 +274,7 @@ def _infer_one(
     tso_df = _load_tso_data(region)
     target_col = _get_target_col(target, region)
     if target_col not in tso_df.columns and target != "gen_load_diff":
-        raise KeyError(
-            f"Target column '{target_col}' missing from TSO data for {region}"
-        )
+        raise KeyError(f"Target column '{target_col}' missing from TSO data for {region}")
     y_actual = tso_df[target_col] if target_col in tso_df.columns else tso_df.iloc[:, 0]
 
     # Forecast timestamps: from last TSO actual + 1h, for 168h
@@ -285,10 +300,8 @@ def _infer_one(
     exog_df = _build_exog_features(target, exog_forecasts, forecast_idx)
 
     # Align all feature frames on forecast_idx
-    common_idx = (
-        forecast_idx
-        .intersection(weather_features.index)
-        .intersection(temporal_features.dropna(how="any").index)
+    common_idx = forecast_idx.intersection(weather_features.index).intersection(
+        temporal_features.dropna(how="any").index
     )
     if exog_df is not None and not exog_df.empty:
         common_idx = common_idx.intersection(exog_df.dropna(how="any").index)
@@ -306,9 +319,7 @@ def _infer_one(
 
     # Target lag columns (autoregressive)
     if lags_target:
-        lag_seed = _build_target_lag_seed(
-            target, region, y_actual, lags_target, common_idx
-        )
+        lag_seed = _build_target_lag_seed(target, region, y_actual, lags_target, common_idx)
         for col, vals in lag_seed.items():
             X_forecast[col] = vals
 
@@ -328,10 +339,14 @@ def _infer_one(
             out["y_lower"] = out["y_pred"] - run
             out["y_upper"] = out["y_pred"] + run
 
-    logger.info(
-        f"Inferred {target}/{region}: {len(out)} hours, "
-        f"mean={out['y_pred'].mean():.1f}"
-    )
+    # Solar cannot produce at night — zero out predictions below the horizon.
+    # Recursive lag forecasts accumulate errors and can predict non-zero values
+    # at night; this clamp applies the physical constraint.
+    if target == "solar":
+        is_day = _solar_elevation_mask(out.index)
+        out.loc[~is_day, ["y_pred", "y_lower", "y_upper"]] = 0.0
+
+    logger.info(f"Inferred {target}/{region}: {len(out)} hours, mean={out['y_pred'].mean():.1f}")
     return out
 
 
@@ -392,8 +407,7 @@ def aggregate_national(
         agg = sum(df.reindex(common_idx) for df in frames)
         national[(target, "DE_NATIONAL")] = agg
         logger.info(
-            f"National aggregate {target}: {len(agg)} hours, "
-            f"mean={agg['y_pred'].mean():.1f}"
+            f"National aggregate {target}: {len(agg)} hours, mean={agg['y_pred'].mean():.1f}"
         )
     return national
 
@@ -409,7 +423,9 @@ def update_historical_forecasts(
     HISTORICAL_FORECASTS_DIR.mkdir(parents=True, exist_ok=True)
     for (target, region), df in results.items():
         path = HISTORICAL_FORECASTS_DIR / f"{target}_{region}.parquet"
-        new_rows = df.rename(columns={"y_pred": "y_pred", "y_lower": "y_lower", "y_upper": "y_upper"})
+        new_rows = df.rename(
+            columns={"y_pred": "y_pred", "y_lower": "y_lower", "y_upper": "y_upper"}
+        )
         # Add placeholder y_true (unknown until next day)
         new_rows = new_rows.copy()
         if "y_true" not in new_rows.columns:

@@ -166,22 +166,22 @@ def compute_neg_price_stats(price: pd.Series) -> pd.DataFrame:
     Returns three columns:
         _derived_neg_price_frac_30d  — fraction of hours with price < 0 in last 30 days
         _derived_neg_price_frac_90d  — same, 90 days
-        _derived_neg_price_depth_30d — mean of negative-only prices in last 30 days
-                                       (NaN when no negative hour fell in the window)
+        _derived_neg_price_depth_30d — average positive below-zero magnitude
+                                       in last 30 days
 
     The engine applies the D-1 lag via the `_d1` suffix on the SHORT_NAME alias,
     so these series are stored un-lagged.
     """
     neg = (price < 0).astype(float)
-    neg_only = price.where(price < 0)
+    neg_depth = (-price).clip(lower=0)
 
     window_30d = 30 * 24
     window_90d = 90 * 24
 
     result = pd.DataFrame(index=price.index)
-    result["_derived_neg_price_frac_30d"] = neg.rolling(window_30d, min_periods=window_30d).mean()
-    result["_derived_neg_price_frac_90d"] = neg.rolling(window_90d, min_periods=window_90d).mean()
-    result["_derived_neg_price_depth_30d"] = neg_only.rolling(window_30d, min_periods=window_30d).mean()
+    result["_derived_neg_price_frac_30d"] = neg.rolling(window_30d, min_periods=1).mean()
+    result["_derived_neg_price_frac_90d"] = neg.rolling(window_90d, min_periods=1).mean()
+    result["_derived_neg_price_depth_30d"] = neg_depth.rolling(window_30d, min_periods=1).mean()
     return result
 
 
@@ -291,7 +291,6 @@ def _rolling_stat_fast(
 
     vals = rolled.reindex(series.index.normalize())
     return pd.Series(vals.values, index=series.index, dtype=float)
-
 
 
 def _rolling_stat_slow(

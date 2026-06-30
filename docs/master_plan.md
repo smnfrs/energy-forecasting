@@ -945,6 +945,8 @@ In addition to per-stage unit tests (which are expected as part of each stage's 
 
 **Goal:** Live site showing all forecasts with prediction intervals, consuming the API.
 
+**Detailed plan:** [`docs/stage7_dashboard.md`](stage7_dashboard.md)
+
 ### 7.1 Combined Dashboard
 
 Merge EMA's ApexCharts dashboard with EP's price forecast display:
@@ -964,11 +966,17 @@ The dashboard reads from the same JSON endpoints the API serves. For GitHub Page
 - Performance tab tracks accuracy for all targets
 
 ### Stage 7 Evaluation
-<!-- Fill in after stage 7 is complete -->
 
-**Status:** Not started
+**Status:** Stage 7a implemented (2026-06-30) — verification gate pending local browser smoke test
 
 **What was implemented:**
+- `deploy/.nojekyll`, `deploy/index.html`, `deploy/monitoring.html`, `deploy/script.js`, `deploy/monitoring.js`, `deploy/styles.css`, `deploy/translations.json` — full static site
+- `publish.py`: `write_actuals()` (30-day rolling price actuals), `write_errors_summary()` (aggregated ensemble MAE/RMSE trend), both wired into `write_outputs()`
+- `model_metadata.json` now includes `needs_reselection` flag for dashboard warning banner
+- `adaptHistory()` adapter in `script.js` bridging Stage 6 history schema to EP-compatible format
+- 5 new Python tests in `test_deploy_publish.py`; all 509 tests pass
+- `make serve-dashboard`, `make open-dashboard`, `make test-dashboard` Makefile targets
+- `tests/test_dashboard.js` Playwright smoke test (local run only)
 
 **Deviations from plan:**
 

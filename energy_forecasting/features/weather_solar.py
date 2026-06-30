@@ -204,9 +204,7 @@ class WeatherSolarPowerFE:
             "dew_point_temperature": trial.suggest_categorical(
                 f"{prefix}_dew_point", [True, False]
             ),
-            "vapor_pressure": trial.suggest_categorical(
-                f"{prefix}_vapor_pressure", [True, False]
-            ),
+            "vapor_pressure": trial.suggest_categorical(f"{prefix}_vapor_pressure", [True, False]),
             "precip_lags_option": trial.suggest_categorical(
                 f"{prefix}_precip_lags", ["none", "small", "large"]
             ),
@@ -219,9 +217,7 @@ class WeatherSolarPowerFE:
             "drop_raw_solar_features": trial.suggest_categorical(
                 f"{prefix}_drop_solar", [True, False]
             ),
-            "drop_raw_features": trial.suggest_categorical(
-                f"{prefix}_drop_raw", [True, False]
-            ),
+            "drop_raw_features": trial.suggest_categorical(f"{prefix}_drop_raw", [True, False]),
             "spatial_agg_method": trial.suggest_categorical(
                 f"{prefix}_spatial",
                 [

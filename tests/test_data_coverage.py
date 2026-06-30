@@ -62,14 +62,19 @@ class TestCommodityCoverage:
         assert df.index.min().year <= expected_start_year
 
     def test_no_large_gaps(self):
-        """No commodity should have an unexpected multi-month gap."""
+        """No commodity should have an unexpected source-specific gap."""
+        max_gap_by_source = {
+            "fred_eu_gas.parquet": pd.Timedelta(days=35),  # monthly FRED cadence
+        }
+        default_max_gap = pd.Timedelta(days=30)
         for path in COMMODITIES_DIR.glob("*.parquet"):
             df = load_parquet(path)
             if len(df) < 2:
                 continue
             gaps = df.index.to_series().diff()
             max_gap = gaps.max()
-            assert max_gap < pd.Timedelta(days=30), f"{path.name} has a {max_gap.days}-day gap"
+            allowed = max_gap_by_source.get(path.name, default_max_gap)
+            assert max_gap <= allowed, f"{path.name} has a {max_gap.days}-day gap"
 
 
 class TestWeatherCoverage:

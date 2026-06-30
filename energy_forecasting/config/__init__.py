@@ -20,7 +20,7 @@ ENERGY_CHARTS_DIR = RAW_DATA_DIR / "energy_charts"
 
 # Models
 MODELS_DIR = PROJ_ROOT / "models"
-MLFLOW_DB_PATH = MODELS_DIR / "mlflow.db"
+MLFLOW_DB_PATH = PROJ_ROOT / "mlflow.db"
 MLFLOW_TRACKING_URI = f"sqlite:///{MLFLOW_DB_PATH.as_posix()}"
 
 # Deployment

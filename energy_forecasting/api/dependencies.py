@@ -7,7 +7,6 @@ daily inference pipeline. No model loading happens at request time.
 from __future__ import annotations
 
 import json
-from functools import lru_cache
 from pathlib import Path
 
 from energy_forecasting.config import DEPLOY_DATA_DIR
@@ -38,10 +37,7 @@ def get_price_forecast() -> dict:
 
 def get_gen_load_forecast(target: str) -> dict:
     if target not in _GEN_LOAD_FILES:
-        raise ValueError(
-            f"Unknown gen/load target '{target}'. "
-            f"Available: {list(_GEN_LOAD_FILES)}"
-        )
+        raise ValueError(f"Unknown gen/load target '{target}'. Available: {list(_GEN_LOAD_FILES)}")
     return _load_json(_GEN_LOAD_FILES[target])
 
 

@@ -83,7 +83,11 @@ GEN_LOAD_TARGETS = {
     },
     "load": {
         "regions": [
-            "DE_50HZ", "DE_AMPRION", "DE_TENNET", "DE_TRANSNETBW", "DE_CREOS",
+            "DE_50HZ",
+            "DE_AMPRION",
+            "DE_TENNET",
+            "DE_TRANSNETBW",
+            "DE_CREOS",
         ],
         # Actual values used during training; forecast outputs used at inference.
         "exog_targets": ["wind_onshore", "wind_offshore", "solar"],
@@ -100,8 +104,8 @@ GEN_LOAD_HORIZON_HOURS = 168  # 7 days
 # parallel. Each group must complete before the next starts.
 GEN_LOAD_TRAINING_ORDER: list[list[str]] = [
     ["wind_onshore", "wind_offshore", "solar"],  # independent
-    ["load"],                                      # depends on wind/solar
-    ["gen_load_diff"],                             # depends on all above
+    ["load"],  # depends on wind/solar
+    ["gen_load_diff"],  # depends on all above
 ]
 
 # Map region codes (used in GEN_LOAD_TARGETS) to TSO directory names

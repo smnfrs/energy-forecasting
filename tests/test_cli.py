@@ -55,12 +55,20 @@ def test_commodity_commands_use_sequential_execution():
     """
     import inspect
 
-    from energy_forecasting.cli import download_all_sources, download_commodities, update_commodities
+    from energy_forecasting.cli import (
+        download_all_sources,
+        download_commodities,
+        update_commodities,
+    )
 
     for fn in [download_commodities, update_commodities]:
         source = inspect.getsource(fn)
-        assert "_run_sequential" in source, f"{fn.__name__} must use _run_sequential (yfinance is not thread-safe)"
-        assert "_run_parallel" not in source, f"{fn.__name__} must not use _run_parallel (yfinance is not thread-safe)"
+        assert "_run_sequential" in source, (
+            f"{fn.__name__} must use _run_sequential (yfinance is not thread-safe)"
+        )
+        assert "_run_parallel" not in source, (
+            f"{fn.__name__} must not use _run_parallel (yfinance is not thread-safe)"
+        )
 
     # download_all_sources uses inner functions; check the full source
     source = inspect.getsource(download_all_sources)
@@ -72,3 +80,28 @@ def test_commodity_commands_use_sequential_execution():
     assert "_run_sequential" in other_block, (
         "download_all _download_other must use _run_sequential (yfinance is not thread-safe)"
     )
+
+
+def test_batch_helpers_return_failures():
+    from energy_forecasting.cli import _run_parallel, _run_sequential
+
+    def ok():
+        return None
+
+    def bad():
+        raise RuntimeError("boom")
+
+    assert _run_sequential([(ok, "ok"), (bad, "bad")], label="seq") == ["bad"]
+    assert _run_parallel([(ok, "ok"), (bad, "bad")], max_workers=2, label="par") == ["bad"]
+
+
+def test_exit_if_failures_exits_nonzero():
+    import typer
+    from energy_forecasting.cli import _exit_if_failures
+
+    try:
+        _exit_if_failures(["bad"])
+    except typer.Exit as exc:
+        assert exc.exit_code == 1
+    else:
+        raise AssertionError("expected typer.Exit")

@@ -5,7 +5,6 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
-
 from energy_forecasting.modeling.ensemble import (
     HOLDOUT_FIT_METHODS,
     METHOD_FACTORIES,
@@ -29,7 +28,6 @@ from energy_forecasting.modeling.ensemble import (
     select_best_ensemble,
 )
 
-
 # ── Fixtures ──────────────────────────────────────────────────────
 
 
@@ -42,9 +40,7 @@ def synthetic_preds():
     y_hold = pd.Series(rng.normal(50, 20, n_hold), name="y")
     noises = [3.0, 4.0, 5.0, 20.0]  # last model is dramatically worse
     names = [f"m{i}" for i in range(len(noises))]
-    preds_oof = pd.DataFrame(
-        {n: y_oof + rng.normal(0, s, n_oof) for n, s in zip(names, noises)}
-    )
+    preds_oof = pd.DataFrame({n: y_oof + rng.normal(0, s, n_oof) for n, s in zip(names, noises)})
     preds_hold = pd.DataFrame(
         {n: y_hold + rng.normal(0, s, n_hold) for n, s in zip(names, noises)}
     )
@@ -56,10 +52,17 @@ def synthetic_preds():
 
 def test_all_11_methods_registered():
     expected = {
-        "simple_average", "inverse_mae", "inverse_rmse", "top_k_trimmed",
-        "slsqp_optimized", "greedy_forward", "hill_climbing",
-        "simulated_annealing", "diversity_regularized",
-        "stacking_ridge", "stacking_lgbm",
+        "simple_average",
+        "inverse_mae",
+        "inverse_rmse",
+        "top_k_trimmed",
+        "slsqp_optimized",
+        "greedy_forward",
+        "hill_climbing",
+        "simulated_annealing",
+        "diversity_regularized",
+        "stacking_ridge",
+        "stacking_lgbm",
     }
     assert set(METHOD_FACTORIES) == expected
 
@@ -77,9 +80,15 @@ def test_stacking_methods_are_oof_fit():
 
 def test_weight_methods_are_holdout_fit():
     for m in [
-        "simple_average", "inverse_mae", "inverse_rmse", "top_k_trimmed",
-        "slsqp_optimized", "greedy_forward", "hill_climbing",
-        "simulated_annealing", "diversity_regularized",
+        "simple_average",
+        "inverse_mae",
+        "inverse_rmse",
+        "top_k_trimmed",
+        "slsqp_optimized",
+        "greedy_forward",
+        "hill_climbing",
+        "simulated_annealing",
+        "diversity_regularized",
     ]:
         assert m in HOLDOUT_FIT_METHODS, f"{m} should be holdout-fit"
 
@@ -167,8 +176,6 @@ def test_diversity_regularized_produces_valid_ensemble(synthetic_preds):
     assert (diverse.weights >= 0).all()
 
 
-
-
 def test_stacking_ridge_returns_stack_ensemble(synthetic_preds):
     preds_oof, y_oof, *_ = synthetic_preds
     ens = fit_stacking_ridge(preds_oof, y_oof)
@@ -183,9 +190,7 @@ def test_stacking_lgbm_predicts_reasonably(synthetic_preds):
     ens = fit_stacking_lgbm(preds_oof, y_oof)
     preds = ens.predict(preds_hold)
     # MAE should be at most the worst single model's MAE
-    worst = max(
-        float(np.mean(np.abs(y_hold - preds_hold[c]))) for c in preds_hold.columns
-    )
+    worst = max(float(np.mean(np.abs(y_hold - preds_hold[c]))) for c in preds_hold.columns)
     actual = float(np.mean(np.abs(y_hold - preds)))
     assert actual <= worst * 1.1, f"stacking_lgbm MAE {actual} ≫ worst single {worst}"
 
@@ -260,7 +265,9 @@ def test_compare_holdout_oof_routing(synthetic_preds):
         for c in preds_hold.columns
     ]
     np.testing.assert_allclose(
-        fitted.metadata["per_model_mae"], holdout_maes, rtol=1e-6,
+        fitted.metadata["per_model_mae"],
+        holdout_maes,
+        rtol=1e-6,
     )
     # Sanity: reported holdout MAE matches fresh recomputation
     fresh = float(np.mean(np.abs(y_hold.to_numpy() - fitted.predict(preds_hold))))
@@ -271,9 +278,7 @@ def test_compare_single_baselines_exact(synthetic_preds):
     preds_oof, y_oof, preds_hold, y_hold, names = synthetic_preds
     df = compare_ensemble_methods(preds_oof, y_oof, preds_hold, y_hold)
     for name in names:
-        expected = float(
-            np.mean(np.abs(y_hold.to_numpy() - preds_hold[name].to_numpy()))
-        )
+        expected = float(np.mean(np.abs(y_hold.to_numpy() - preds_hold[name].to_numpy())))
         row = df[df["method"] == f"single::{name}"].iloc[0]
         assert row["mae"] == pytest.approx(expected, rel=1e-9)
 
@@ -281,7 +286,11 @@ def test_compare_single_baselines_exact(synthetic_preds):
 def test_compare_skip_base_models(synthetic_preds):
     preds_oof, y_oof, preds_hold, y_hold, _ = synthetic_preds
     df = compare_ensemble_methods(
-        preds_oof, y_oof, preds_hold, y_hold, include_base_models=False,
+        preds_oof,
+        y_oof,
+        preds_hold,
+        y_hold,
+        include_base_models=False,
     )
     assert not any(m.startswith("single::") for m in df["method"])
 
@@ -289,7 +298,10 @@ def test_compare_skip_base_models(synthetic_preds):
 def test_compare_subset_of_methods(synthetic_preds):
     preds_oof, y_oof, preds_hold, y_hold, _ = synthetic_preds
     df = compare_ensemble_methods(
-        preds_oof, y_oof, preds_hold, y_hold,
+        preds_oof,
+        y_oof,
+        preds_hold,
+        y_hold,
         methods=["simple_average", "inverse_mae"],
         include_base_models=False,
     )
@@ -326,23 +338,25 @@ def test_select_best_never_worse_than_best_single():
     n_oof, n_hold = 200, 60
     y_oof = pd.Series(rng.normal(50, 10, n_oof))
     y_hold = pd.Series(rng.normal(50, 10, n_hold))
-    preds_oof = pd.DataFrame({
-        "good": y_oof + rng.normal(0, 0.05, n_oof),
-        "bad1": y_oof + rng.normal(0, 25, n_oof),
-        "bad2": y_oof + rng.normal(0, 25, n_oof),
-        "bad3": y_oof + rng.normal(0, 25, n_oof),
-    })
-    preds_hold = pd.DataFrame({
-        "good": y_hold + rng.normal(0, 0.05, n_hold),
-        "bad1": y_hold + rng.normal(0, 25, n_hold),
-        "bad2": y_hold + rng.normal(0, 25, n_hold),
-        "bad3": y_hold + rng.normal(0, 25, n_hold),
-    })
+    preds_oof = pd.DataFrame(
+        {
+            "good": y_oof + rng.normal(0, 0.05, n_oof),
+            "bad1": y_oof + rng.normal(0, 25, n_oof),
+            "bad2": y_oof + rng.normal(0, 25, n_oof),
+            "bad3": y_oof + rng.normal(0, 25, n_oof),
+        }
+    )
+    preds_hold = pd.DataFrame(
+        {
+            "good": y_hold + rng.normal(0, 0.05, n_hold),
+            "bad1": y_hold + rng.normal(0, 25, n_hold),
+            "bad2": y_hold + rng.normal(0, 25, n_hold),
+            "bad3": y_hold + rng.normal(0, 25, n_hold),
+        }
+    )
     df = compare_ensemble_methods(preds_oof, y_oof, preds_hold, y_hold)
     method, _, metrics = select_best_ensemble(df)
-    good_mae = float(
-        np.mean(np.abs(y_hold.to_numpy() - preds_hold["good"].to_numpy()))
-    )
+    good_mae = float(np.mean(np.abs(y_hold.to_numpy() - preds_hold["good"].to_numpy())))
     assert metrics["mae"] <= good_mae + 1e-9, (
         f"winner {method!r} ({metrics['mae']:.4f}) is worse than "
         f"single::good ({good_mae:.4f}) — fallback failed"
@@ -370,7 +384,9 @@ def test_config_dict_weight_ensemble_serialises(synthetic_preds):
     df = compare_ensemble_methods(preds_oof, y_oof, preds_hold, y_hold)
     _, ens, metrics = select_best_ensemble(df)
     config = ensemble_config_dict(
-        ens, base_runs={n: {"run_id": f"r_{n}"} for n in names}, metrics=metrics,
+        ens,
+        base_runs={n: {"run_id": f"r_{n}"} for n in names},
+        metrics=metrics,
     )
     assert "ensemble" in config
     assert "metrics" in config

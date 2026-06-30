@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Model Monitoring — DE-LU Energy Forecast</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div>
+      <h1 data-i18n="monitoring_title">Model Monitoring</h1>
+      <p class="subtitle" data-i18n="title">DE-LU Energy Forecast</p>
+    </div>
+    <div class="header-actions">
+      <a href="index.html" class="nav-link" data-i18n="back_to_forecast">Back to Forecast</a>
+      <button id="lang-toggle" class="lang-btn">DE</button>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- §1 Price Error Trend -->
+  <section class="card">
+    <h2 data-i18n="model_mae_title">Price Error Trend (30 Days)</h2>
+    <div id="error-trend-chart"></div>
+  </section>
+
+  <!-- §2 Ensemble Composition + Info Panel -->
+  <section class="card">
+    <h2 data-i18n="composition_title">Ensemble Composition</h2>
+    <div id="composition-chart"></div>
+    <div id="info-panel" class="info-panel"></div>
+  </section>
+
+  <!-- §3 Retrain Log -->
+  <section class="card">
+    <h2 data-i18n="retrain_log_title">Retrain Log</h2>
+    <div id="retrain-log"></div>
+  </section>
+
+</main>
+
+<footer>
+  <p>DE-LU Energy Forecast &middot; <a href="index.html" data-i18n="back_to_forecast">Back to Forecast</a></p>
+</footer>
+
+<script src="monitoring.js"></script>
+</body>
+</html>

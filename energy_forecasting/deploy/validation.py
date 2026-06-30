@@ -6,22 +6,23 @@ All checks run before any JSON is written so a bad forecast never reaches the AP
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 from loguru import logger
 
 # ── EPEX Spot bounds (DE/AT/LU + safety buffer) ──────────────────────
-PRICE_MIN = -500.0    # EUR/MWh
-PRICE_MAX = 3_000.0   # EUR/MWh
+PRICE_MIN = -500.0  # EUR/MWh
+PRICE_MAX = 3_000.0  # EUR/MWh
 
 # ── National generation / load plausibility bounds ───────────────────
-LOAD_NATIONAL_MIN_MW = 10_000   # DE minimum total load
+LOAD_NATIONAL_MIN_MW = 10_000  # DE minimum total load
 LOAD_NATIONAL_MAX_MW = 120_000  # DE peak load never exceeded
-GENERATION_MIN_MW = 0.0          # generation cannot be negative
-SOLAR_NIGHT_THRESHOLD_MW = 1.0   # solar output above this at night = suspect
+GENERATION_MIN_MW = 0.0  # generation cannot be negative
+SOLAR_NIGHT_THRESHOLD_MW = 1.0  # solar output above this at night = suspect
 
-# Night hours in local time where solar should be zero
-SOLAR_NIGHT_HOURS = {0, 1, 2, 3, 4, 21, 22, 23}
+# UTC hours that are night in Germany in both CET (UTC+1) and CEST (UTC+2).
+# UTC 4 is 06:00 Berlin in summer (already daylight) so it is excluded.
+# UTC 20 is 22:00 Berlin year-round (always night) so it is included.
+SOLAR_NIGHT_HOURS = {20, 21, 22, 23, 0, 1, 2, 3}
 
 
 class ForecastValidationError(ValueError):
@@ -31,16 +32,12 @@ class ForecastValidationError(ValueError):
 def _require_no_nan(df: pd.DataFrame, name: str, column: str = "y_pred") -> None:
     n = df[column].isna().sum()
     if n:
-        raise ForecastValidationError(
-            f"{name}: {n} NaN values in {column}"
-        )
+        raise ForecastValidationError(f"{name}: {n} NaN values in {column}")
 
 
 def _require_row_count(df: pd.DataFrame, expected: int, name: str) -> None:
     if len(df) != expected:
-        raise ForecastValidationError(
-            f"{name}: expected {expected} rows, got {len(df)}"
-        )
+        raise ForecastValidationError(f"{name}: expected {expected} rows, got {len(df)}")
 
 
 def validate_price(price_df: pd.DataFrame) -> None:
@@ -51,9 +48,7 @@ def validate_price(price_df: pd.DataFrame) -> None:
     _require_row_count(price_df, 24, "price")
     _require_no_nan(price_df, "price", "y_pred")
 
-    out_of_bounds = (
-        (price_df["y_pred"] < PRICE_MIN) | (price_df["y_pred"] > PRICE_MAX)
-    )
+    out_of_bounds = (price_df["y_pred"] < PRICE_MIN) | (price_df["y_pred"] > PRICE_MAX)
     if out_of_bounds.any():
         bad = price_df.loc[out_of_bounds, "y_pred"]
         raise ForecastValidationError(
@@ -66,9 +61,7 @@ def validate_price(price_df: pd.DataFrame) -> None:
     )
 
 
-def validate_generation(
-    df: pd.DataFrame, name: str, *, is_solar: bool = False
-) -> None:
+def validate_generation(df: pd.DataFrame, name: str, *, is_solar: bool = False) -> None:
     """Validate a gen/load forecast DataFrame.
 
     Expects 168 rows with column y_pred ≥ 0 for generation, with an extra
@@ -80,8 +73,7 @@ def validate_generation(
     if (df["y_pred"] < GENERATION_MIN_MW).any():
         n_neg = (df["y_pred"] < GENERATION_MIN_MW).sum()
         raise ForecastValidationError(
-            f"{name}: {n_neg} negative generation values "
-            f"(min={df['y_pred'].min():.1f} MW)"
+            f"{name}: {n_neg} negative generation values (min={df['y_pred'].min():.1f} MW)"
         )
 
     if is_solar:

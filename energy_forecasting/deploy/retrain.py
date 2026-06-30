@@ -21,14 +21,11 @@ Usage:
 from __future__ import annotations
 
 import json
-import re
-from pathlib import Path
 
-import numpy as np
 import pandas as pd
 from loguru import logger
 
-from energy_forecasting.config import MLFLOW_TRACKING_URI, MODELS_DIR
+from energy_forecasting.config import MLFLOW_TRACKING_URI
 from energy_forecasting.config.modeling import BLEND_DEGRADATION_THRESHOLD, HOLDOUT_DAYS
 from energy_forecasting.deploy.model_store import (
     ENSEMBLE_CONFIG_PATH,
@@ -65,13 +62,8 @@ def _retrain_one_price_model(entry: dict) -> str | None:
 
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
-    from energy_forecasting.config.features import (
-        PRICE_FEATURES_FULL,
-        PRICE_FEATURES_MAX,
-        PRICE_FEATURES_SLIM,
-    )
     from energy_forecasting.modeling.cv import TimeSeriesSplitter
-    from energy_forecasting.modeling.datasets import DATASET_DIR, find_dataset
+    from energy_forecasting.modeling.datasets import find_dataset
     from energy_forecasting.modeling.training import train_model
     from energy_forecasting.modeling.tuning import _make_model as _make_price_model
 
@@ -158,7 +150,7 @@ def run_price_retrain(
     if needs_reselection and not force:
         logger.warning(
             f"Retrain degraded: new MAE={new_mae:.3f} vs old={old_mae:.3f} "
-            f"(ratio={new_mae/old_mae:.2%} > threshold {1+BLEND_DEGRADATION_THRESHOLD:.0%}). "
+            f"(ratio={new_mae / old_mae:.2%} > threshold {1 + BLEND_DEGRADATION_THRESHOLD:.0%}). "
             "Not updating config. Pass --force to override."
         )
         return {
@@ -171,9 +163,7 @@ def run_price_retrain(
     # 5. Update config and export
     new_config["needs_reselection"] = needs_reselection
     ENSEMBLE_CONFIG_PATH.write_text(json.dumps(new_config, indent=2))
-    logger.info(
-        f"ensemble_config.json updated: MAE {old_mae:.3f} → {new_mae:.3f}"
-    )
+    logger.info(f"ensemble_config.json updated: MAE {old_mae:.3f} → {new_mae:.3f}")
 
     export_price_models(new_config)
 
@@ -200,8 +190,7 @@ def _recompute_ensemble(
         ensemble_config_dict,
         select_best_ensemble,
     )
-    from energy_forecasting.modeling.price import _fetch_predictions, _stack_predictions
-    from energy_forecasting.modeling.price import _ModelRun
+    from energy_forecasting.modeling.price import _ModelRun, _stack_predictions
 
     # Build updated model run list
     new_model_runs = []

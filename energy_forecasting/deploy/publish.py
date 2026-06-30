@@ -20,13 +20,12 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from loguru import logger
 
-from energy_forecasting.config import DEPLOY_DATA_DIR, MODELS_DIR
+from energy_forecasting.config import DEPLOY_DATA_DIR
 
 GEN_LOAD_DATA_DIR = DEPLOY_DATA_DIR / "gen_load"
 ERRORS_DIR = DEPLOY_DATA_DIR / "errors"
@@ -63,9 +62,7 @@ def _hourly_entries(df: pd.DataFrame) -> list[dict]:
     return entries
 
 
-def write_price_forecast(
-    price_df: pd.DataFrame, issued_at: str | None = None
-) -> None:
+def write_price_forecast(price_df: pd.DataFrame, issued_at: str | None = None) -> None:
     """Write price_forecast.json."""
     DEPLOY_DATA_DIR.mkdir(parents=True, exist_ok=True)
     issued_at = issued_at or _now_utc()
@@ -110,8 +107,7 @@ def _append_price_history(price_df: pd.DataFrame, issued_at: str) -> None:
 
     # Deduplicate by issued_at date
     forecasts = [
-        f for f in history.get("forecasts", [])
-        if f.get("issued_at", "")[:10] != issued_at[:10]
+        f for f in history.get("forecasts", []) if f.get("issued_at", "")[:10] != issued_at[:10]
     ]
     forecasts.append(entry)
     # Keep last HISTORY_DAYS entries
@@ -192,12 +188,14 @@ def write_model_metadata(issued_at: str | None = None) -> None:
             cat = "catboost"
         else:
             cat = "linear"
-        models.append({
-            "name": entry["name"],
-            "category": cat,
-            "weight": round(weights.get(entry["name"], 0.0), 6),
-            "run_id": entry["run_id"],
-        })
+        models.append(
+            {
+                "name": entry["name"],
+                "category": cat,
+                "weight": round(weights.get(entry["name"], 0.0), 6),
+                "run_id": entry["run_id"],
+            }
+        )
 
     payload = {
         "target": "price",
@@ -208,9 +206,62 @@ def write_model_metadata(issued_at: str | None = None) -> None:
         "pi_coverage": round(cfg.get("pi_coverage", 0.0), 4),
         "last_retrain": issued_at,
         "conformal_quantile": round(cfg.get("conformal_quantile", 0.0), 3),
+        "needs_reselection": bool(cfg.get("needs_reselection", False)),
     }
     METADATA_PATH.write_text(json.dumps(payload, indent=2))
     logger.info(f"Written {METADATA_PATH}")
+
+
+def write_actuals() -> None:
+    """Write rolling 30-day actual DE-LU prices to actuals.json."""
+    from energy_forecasting.config import PROCESSED_DATA_DIR
+
+    try:
+        merged = pd.read_parquet(PROCESSED_DATA_DIR / "merged.parquet", columns=["target_price"])
+    except FileNotFoundError:
+        return
+    # Filter complete days first, then trim to last 30.
+    # merged.parquet has exactly 24 rows per day after normalize_dst, so
+    # len == 24 only guards against a partial trailing day.
+    filtered = merged.dropna(subset=["target_price"])
+    by_date = filtered.groupby(filtered.index.date)
+    complete = [(d, grp) for d, grp in by_date if len(grp) == 24]
+    complete.sort(key=lambda x: x[0])
+    days = [
+        {"date": str(d), "prices": [round(float(v), 3) for v in grp["target_price"].values]}
+        for d, grp in complete[-30:]
+    ]
+    DEPLOY_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    (DEPLOY_DATA_DIR / "actuals.json").write_text(
+        json.dumps({"days": days, "count": len(days)}, indent=2)
+    )
+    logger.info(f"Written actuals.json ({len(days)} days)")
+
+
+def write_errors_summary() -> None:
+    """Aggregate errors/*.json into errors_summary.json (last 30 days)."""
+    if not ERRORS_DIR.exists():
+        return
+    records = sorted(
+        [
+            json.loads(p.read_text())
+            for p in ERRORS_DIR.glob("*.json")
+            if p.stem[0].isdigit()
+        ],
+        key=lambda r: r["date"],
+    )[-30:]
+    DEPLOY_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    (DEPLOY_DATA_DIR / "errors_summary.json").write_text(
+        json.dumps(
+            {
+                "dates": [r["date"] for r in records],
+                "mae": [r["mae"] for r in records],
+                "rmse": [r["rmse"] for r in records],
+            },
+            indent=2,
+        )
+    )
+    logger.info(f"Written errors_summary.json ({len(records)} entries)")
 
 
 def write_outputs(
@@ -224,6 +275,8 @@ def write_outputs(
     _append_price_history(price_df, issued_at=issued_at)
     write_gen_load_forecasts(gen_load_results, issued_at=issued_at)
     write_model_metadata(issued_at=issued_at)
+    write_actuals()
+    write_errors_summary()
     logger.info("All outputs written to deploy/data/")
 
 

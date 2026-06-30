@@ -44,9 +44,7 @@ def calculate_metrics(
     denom = np.abs(y_true) + np.abs(y_pred)
     nonzero_denom = denom > 1e-8
     if nonzero_denom.any():
-        smape = float(
-            np.mean(2.0 * np.abs(residuals[nonzero_denom]) / denom[nonzero_denom]) * 100
-        )
+        smape = float(np.mean(2.0 * np.abs(residuals[nonzero_denom]) / denom[nonzero_denom]) * 100)
     else:
         smape = float("inf")
 

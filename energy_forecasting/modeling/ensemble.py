@@ -27,7 +27,6 @@ from sklearn.linear_model import Ridge
 from energy_forecasting.config.modeling import ENSEMBLE_METHODS
 from energy_forecasting.modeling.metrics import calculate_metrics
 
-
 # ── Container types ───────────────────────────────────────────────
 
 
@@ -101,7 +100,8 @@ def _mae(y_true: np.ndarray, y_pred: np.ndarray) -> float:
 
 
 def fit_simple_average(
-    preds_oof: pd.DataFrame, y_oof: pd.Series,
+    preds_oof: pd.DataFrame,
+    y_oof: pd.Series,
 ) -> WeightEnsemble:
     n = preds_oof.shape[1]
     return WeightEnsemble(
@@ -112,7 +112,10 @@ def fit_simple_average(
 
 
 def fit_inverse_mae(
-    preds_oof: pd.DataFrame, y_oof: pd.Series, *, eps: float = 1e-6,
+    preds_oof: pd.DataFrame,
+    y_oof: pd.Series,
+    *,
+    eps: float = 1e-6,
 ) -> WeightEnsemble:
     """``w_i ∝ 1 / (MAE_i + eps)``.
 
@@ -134,17 +137,22 @@ def fit_inverse_mae(
 
 
 def fit_inverse_rmse(
-    preds_oof: pd.DataFrame, y_oof: pd.Series, *, eps: float = 1e-6,
+    preds_oof: pd.DataFrame,
+    y_oof: pd.Series,
+    *,
+    eps: float = 1e-6,
 ) -> WeightEnsemble:
     """``w_i ∝ 1 / (RMSE_i + eps)``.
 
     From EP's `scripts/compare_blend_strategies.py:59`.
     """
     y_true = y_oof.to_numpy(dtype=float)
-    rmses = np.array([
-        float(np.sqrt(np.mean((y_true - preds_oof[m].to_numpy(float)) ** 2)))
-        for m in preds_oof.columns
-    ])
+    rmses = np.array(
+        [
+            float(np.sqrt(np.mean((y_true - preds_oof[m].to_numpy(float)) ** 2)))
+            for m in preds_oof.columns
+        ]
+    )
     raw = 1.0 / (rmses + eps)
     return WeightEnsemble(
         method="inverse_rmse",
@@ -186,7 +194,8 @@ def fit_top_k_trimmed(
 
 
 def fit_slsqp(
-    preds_oof: pd.DataFrame, y_oof: pd.Series,
+    preds_oof: pd.DataFrame,
+    y_oof: pd.Series,
 ) -> WeightEnsemble:
     """Constrained MAE minimisation: ``Σw=1, w≥0``."""
     from scipy.optimize import minimize
@@ -262,7 +271,10 @@ def fit_greedy_forward(
 
 
 def fit_hill_climbing(
-    preds_oof: pd.DataFrame, y_oof: pd.Series, *, max_iter: int = 200,
+    preds_oof: pd.DataFrame,
+    y_oof: pd.Series,
+    *,
+    max_iter: int = 200,
 ) -> WeightEnsemble:
     """Start from the greedy solution, then accept any single-step
     swap/drop/add that lowers MAE."""
@@ -358,10 +370,15 @@ def fit_simulated_annealing(
 
 
 def fit_diversity_regularized(
-    preds_oof: pd.DataFrame, y_oof: pd.Series, *, diversity_weight: float = 0.05,
+    preds_oof: pd.DataFrame,
+    y_oof: pd.Series,
+    *,
+    diversity_weight: float = 0.05,
 ) -> WeightEnsemble:
     return fit_greedy_forward(
-        preds_oof, y_oof, diversity_weight=diversity_weight,
+        preds_oof,
+        y_oof,
+        diversity_weight=diversity_weight,
     )
 
 
@@ -369,7 +386,8 @@ def fit_diversity_regularized(
 
 
 def fit_stacking_ridge(
-    preds_oof: pd.DataFrame, y_oof: pd.Series,
+    preds_oof: pd.DataFrame,
+    y_oof: pd.Series,
 ) -> StackEnsemble:
     meta = Ridge(positive=True, alpha=1.0)
     meta.fit(preds_oof.to_numpy(float), y_oof.to_numpy(float))
@@ -381,7 +399,8 @@ def fit_stacking_ridge(
 
 
 def fit_stacking_lgbm(
-    preds_oof: pd.DataFrame, y_oof: pd.Series,
+    preds_oof: pd.DataFrame,
+    y_oof: pd.Series,
 ) -> StackEnsemble:
     from lightgbm import LGBMRegressor
 
@@ -422,25 +441,26 @@ METHOD_FACTORIES: dict[str, Callable[[pd.DataFrame, pd.Series], Ensemble]] = {
 # production `_compute_inverse_mae_weights` in src/modeling/blend.py.
 # Stacking methods are fitted on OOF (proper meta-learning, no double use
 # of the holdout for both fit and evaluation).
-HOLDOUT_FIT_METHODS = frozenset({
-    "simple_average",
-    "inverse_mae",
-    "inverse_rmse",
-    "top_k_trimmed",
-    "slsqp_optimized",
-    "greedy_forward",
-    "hill_climbing",
-    "simulated_annealing",
-    "diversity_regularized",
-})
+HOLDOUT_FIT_METHODS = frozenset(
+    {
+        "simple_average",
+        "inverse_mae",
+        "inverse_rmse",
+        "top_k_trimmed",
+        "slsqp_optimized",
+        "greedy_forward",
+        "hill_climbing",
+        "simulated_annealing",
+        "diversity_regularized",
+    }
+)
 OOF_FIT_METHODS = frozenset({"stacking_ridge", "stacking_lgbm"})
 
 
 def fit_ensemble(method: str, preds: pd.DataFrame, y: pd.Series) -> Ensemble:
     if method not in METHOD_FACTORIES:
         raise ValueError(
-            f"Unknown ensemble method {method!r}. "
-            f"Available: {sorted(METHOD_FACTORIES)}"
+            f"Unknown ensemble method {method!r}. Available: {sorted(METHOD_FACTORIES)}"
         )
     return METHOD_FACTORIES[method](preds, y)
 
@@ -475,9 +495,7 @@ def compare_ensemble_methods(
     """
     methods = list(methods) if methods is not None else list(ENSEMBLE_METHODS)
     if list(preds_oof.columns) != list(preds_holdout.columns):
-        raise ValueError(
-            "preds_oof and preds_holdout must share columns in the same order."
-        )
+        raise ValueError("preds_oof and preds_holdout must share columns in the same order.")
 
     rows: list[dict[str, Any]] = []
     fitted: dict[str, Ensemble] = {}
@@ -540,8 +558,7 @@ def select_best_ensemble(
     fitted: dict[str, Ensemble] = comparison.attrs.get("fitted", {})
     if not fitted:
         raise ValueError(
-            "comparison.attrs['fitted'] missing. "
-            "Call compare_ensemble_methods first."
+            "comparison.attrs['fitted'] missing. Call compare_ensemble_methods first."
         )
     winner_row = comparison.iloc[0]
     method = str(winner_row["method"])
@@ -588,8 +605,5 @@ def ensemble_config_dict(
         "conformal_quantile": metrics.get("conformal_quantile"),
         "pi_coverage": metrics.get("pi_coverage"),
         "pi_width": metrics.get("pi_width"),
-        "models": [
-            {"name": name, **base_runs.get(name, {})}
-            for name in ensemble.model_names
-        ],
+        "models": [{"name": name, **base_runs.get(name, {})} for name in ensemble.model_names],
     }

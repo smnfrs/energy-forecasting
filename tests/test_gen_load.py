@@ -103,17 +103,27 @@ class TestGetTargetCol:
 
 class TestMakeModel:
     def test_lgbm(self):
-        model = _make_model("LGBMRegressor", {
-            "n_estimators": 100, "learning_rate": 0.1, "objective": "mae",
-            "metric": "mae",
-        })
+        model = _make_model(
+            "LGBMRegressor",
+            {
+                "n_estimators": 100,
+                "learning_rate": 0.1,
+                "objective": "mae",
+                "metric": "mae",
+            },
+        )
         assert type(model).__name__ == "LGBMRegressor"
 
     def test_xgboost(self):
-        model = _make_model("XGBRegressor", {
-            "n_estimators": 100, "learning_rate": 0.1,
-            "objective": "reg:absoluteerror", "eval_metric": "mae",
-        })
+        model = _make_model(
+            "XGBRegressor",
+            {
+                "n_estimators": 100,
+                "learning_rate": 0.1,
+                "objective": "reg:absoluteerror",
+                "eval_metric": "mae",
+            },
+        )
         assert type(model).__name__ == "XGBRegressor"
 
     def test_elasticnet(self):
@@ -129,10 +139,16 @@ class TestMakeModel:
             _make_model("GradientBoosting", {})
 
     def test_lgbm_fit_predict(self):
-        model = _make_model("LGBMRegressor", {
-            "n_estimators": 10, "learning_rate": 0.1, "objective": "mae",
-            "metric": "mae", "num_leaves": 8,
-        })
+        model = _make_model(
+            "LGBMRegressor",
+            {
+                "n_estimators": 10,
+                "learning_rate": 0.1,
+                "objective": "mae",
+                "metric": "mae",
+                "num_leaves": 8,
+            },
+        )
         rng = np.random.default_rng(42)
         X = rng.normal(size=(100, 5))
         y = X[:, 0] * 2 + rng.normal(0, 0.1, 100)
@@ -194,7 +210,9 @@ class TestExogConfig:
         from energy_forecasting.config.modeling import GEN_LOAD_TARGETS
 
         assert GEN_LOAD_TARGETS["load"]["exog_targets"] == [
-            "wind_onshore", "wind_offshore", "solar",
+            "wind_onshore",
+            "wind_offshore",
+            "solar",
         ]
 
     def test_gen_load_diff_has_exog_targets(self):

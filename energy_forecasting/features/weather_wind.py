@@ -227,9 +227,7 @@ class WeatherWindPowerFE:
             "dew_point_temperature": trial.suggest_categorical(
                 f"{prefix}_dew_point", [True, False]
             ),
-            "vapor_pressure": trial.suggest_categorical(
-                f"{prefix}_vapor_pressure", [True, False]
-            ),
+            "vapor_pressure": trial.suggest_categorical(f"{prefix}_vapor_pressure", [True, False]),
             "lags_choice": trial.suggest_categorical(f"{prefix}_lags", ["none", "small", "large"]),
             "precip_lags_choice": trial.suggest_categorical(
                 f"{prefix}_precip_lags", ["none", "small", "large"]

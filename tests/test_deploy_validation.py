@@ -3,7 +3,6 @@
 import numpy as np
 import pandas as pd
 import pytest
-
 from energy_forecasting.deploy.validation import (
     ForecastValidationError,
     validate_generation,
@@ -17,21 +16,27 @@ def _price_df(values=None, n=24) -> pd.DataFrame:
     if values is None:
         values = np.ones(n) * 100.0
     idx = pd.date_range("2026-06-30 00:00", periods=n, freq="h")
-    return pd.DataFrame({"y_pred": values, "y_lower": values - 10, "y_upper": values + 10}, index=idx)
+    return pd.DataFrame(
+        {"y_pred": values, "y_lower": values - 10, "y_upper": values + 10}, index=idx
+    )
 
 
 def _gen_df(values=None, n=168, start="2026-06-30 00:00") -> pd.DataFrame:
     if values is None:
         values = np.ones(n) * 5000.0
     idx = pd.date_range(start, periods=n, freq="h")
-    return pd.DataFrame({"y_pred": values, "y_lower": values * 0.9, "y_upper": values * 1.1}, index=idx)
+    return pd.DataFrame(
+        {"y_pred": values, "y_lower": values * 0.9, "y_upper": values * 1.1}, index=idx
+    )
 
 
 def _load_df(values=None, n=168) -> pd.DataFrame:
     if values is None:
         values = np.ones(n) * 55_000.0
     idx = pd.date_range("2026-06-30 00:00", periods=n, freq="h")
-    return pd.DataFrame({"y_pred": values, "y_lower": values * 0.95, "y_upper": values * 1.05}, index=idx)
+    return pd.DataFrame(
+        {"y_pred": values, "y_lower": values * 0.95, "y_upper": values * 1.05}, index=idx
+    )
 
 
 # ── Price ────────────────────────────────────────────────────────────
@@ -93,7 +98,7 @@ def test_solar_day_positive_ok():
     # Set daytime hours to 5000 MW
     for i in range(168):
         hour = df.index[i].hour
-        if 5 <= hour <= 20:
+        if 5 <= hour <= 19:
             df.iloc[i, df.columns.get_loc("y_pred")] = 5000.0
     validate_generation(df, "solar/DE_NATIONAL", is_solar=True)
 

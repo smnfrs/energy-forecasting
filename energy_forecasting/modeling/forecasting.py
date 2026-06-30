@@ -16,7 +16,8 @@ from energy_forecasting.modeling.intervals import predict_with_intervals
 
 
 def find_target_lag_columns(
-    columns: Iterable[str], target_name: str,
+    columns: Iterable[str],
+    target_name: str,
 ) -> list[str]:
     """Return columns matching the `{target_name}_h{N}` pattern.
 
@@ -29,7 +30,7 @@ def find_target_lag_columns(
     for col in columns:
         if not col.startswith(prefix):
             continue
-        suffix = col[len(prefix):]
+        suffix = col[len(prefix) :]
         if suffix.isdigit():
             matches.append((int(suffix), col))
     matches.sort()
@@ -111,9 +112,7 @@ def forecast_with_lags_windowed(
         window_indices = [max_windows - 1]
     else:
         # Evenly spaced, both endpoints included
-        window_indices = list(
-            np.linspace(0, max_windows - 1, sample_windows, dtype=int)
-        )
+        window_indices = list(np.linspace(0, max_windows - 1, sample_windows, dtype=int))
 
     y_pred = np.full(n, np.nan)
     eval_mask = np.zeros(n, dtype=bool)
@@ -176,9 +175,7 @@ def forecast_with_lags(
     uppers = np.full(len(X_test), np.nan)
 
     # Pre-compute column positions and lag offsets once
-    col_positions = [
-        (_extract_lag(col), X_work.columns.get_loc(col)) for col in lag_columns
-    ]
+    col_positions = [(_extract_lag(col), X_work.columns.get_loc(col)) for col in lag_columns]
 
     for i in range(len(X_test)):
         row = X_work.iloc[[i]]

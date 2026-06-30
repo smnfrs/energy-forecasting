@@ -22,34 +22,53 @@ app = typer.Typer(help="Energy Forecasting CLI")
 # ── Helpers ────────────────────────────────────────────────────────
 
 
-def _run_parallel(tasks: list, max_workers: int, label: str) -> None:
-    """Run callables in parallel, logging errors without aborting the batch."""
+def _run_parallel(tasks: list, max_workers: int, label: str) -> list[str]:
+    """Run callables in parallel, logging and returning every failure."""
+    failures: list[str] = []
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = {pool.submit(fn): name for fn, name in tasks}
         for future in as_completed(futures):
             name = futures[future]
             try:
-                future.result()
+                result = future.result()
             except Exception:
                 logger.exception(f"Failed: {name}")
+                failures.append(name)
+                continue
+            if isinstance(result, list):
+                failures.extend(f"{name}/{item}" for item in result)
+    if failures:
+        logger.error(f"{label}: {len(failures)} task(s) failed: {failures}")
+    return failures
 
 
-def _run_sequential(tasks: list, label: str) -> None:
-    """Run callables one at a time, logging errors without aborting.
+def _run_sequential(tasks: list, label: str) -> list[str]:
+    """Run callables one at a time, logging and returning every failure.
 
     Aborts early on RateLimitExhausted (hourly/daily API limits)
     since all subsequent tasks would fail too.
     """
     from energy_forecasting.data.weather import RateLimitExhausted
 
+    failures: list[str] = []
     for fn, name in tasks:
         try:
             fn()
         except RateLimitExhausted as exc:
             logger.warning(f"Rate limit exhausted on {name}, aborting remaining tasks: {exc}")
-            return
+            failures.append(name)
+            break
         except Exception:
             logger.exception(f"Failed: {name}")
+            failures.append(name)
+    if failures:
+        logger.error(f"{label}: {len(failures)} task(s) failed: {failures}")
+    return failures
+
+
+def _exit_if_failures(failures: list[str]) -> None:
+    if failures:
+        raise typer.Exit(code=1)
 
 
 # ── Download commands ───────────────────────────────────────────────
@@ -99,7 +118,7 @@ def download_weather(
                 source = OpenMeteoSource(at, t)
                 if source.locations:
                     tasks.append((source.download, f"weather/{at}/{t}"))
-        _run_sequential(tasks, label="weather")
+        _exit_if_failures(_run_sequential(tasks, label="weather"))
     else:
         if not asset_type or not tso:
             raise typer.BadParameter("Provide --asset-type and --tso, or use --all")
@@ -114,7 +133,7 @@ def download_commodities():
     # Sequential: yfinance is not thread-safe (concurrent calls corrupt results)
     sources = all_commodity_sources()
     tasks = [(s.download, type(s).__name__) for s in sources]
-    _run_sequential(tasks, label="commodities")
+    _exit_if_failures(_run_sequential(tasks, label="commodities"))
 
 
 @download_app.command("energy-charts")
@@ -163,18 +182,20 @@ def download_all_sources():
     #   - Commodities + Energy Charts: all in parallel
     def _download_smard():
         logger.info(f"Downloading SMARD ({len(smard_tasks)} regions in parallel)")
-        _run_parallel(smard_tasks, max_workers=len(smard_tasks), label="SMARD")
+        return _run_parallel(smard_tasks, max_workers=len(smard_tasks), label="SMARD")
 
     def _download_weather():
         logger.info(f"Downloading weather ({len(weather_tasks)} sources, sequential)")
-        _run_sequential(weather_tasks, label="weather")
+        return _run_sequential(weather_tasks, label="weather")
 
     def _download_other():
         # Sequential: yfinance is not thread-safe (concurrent calls corrupt results)
-        logger.info(f"Downloading commodities + Energy Charts ({len(other_tasks)} sources, sequential)")
-        _run_sequential(other_tasks, label="commodities")
+        logger.info(
+            f"Downloading commodities + Energy Charts ({len(other_tasks)} sources, sequential)"
+        )
+        return _run_sequential(other_tasks, label="commodities")
 
-    _run_parallel(
+    failures = _run_parallel(
         [
             (_download_weather, "weather-group"),
             (_download_smard, "smard-group"),
@@ -183,6 +204,7 @@ def download_all_sources():
         max_workers=3,
         label="all",
     )
+    _exit_if_failures(failures)
 
 
 # ── Update commands ─────────────────────────────────────────────────
@@ -224,18 +246,20 @@ def update_all_sources():
 
     def _update_smard():
         logger.info(f"Updating SMARD ({len(smard_tasks)} regions in parallel)")
-        _run_parallel(smard_tasks, max_workers=len(smard_tasks), label="SMARD")
+        return _run_parallel(smard_tasks, max_workers=len(smard_tasks), label="SMARD")
 
     def _update_weather():
         logger.info(f"Updating weather ({len(weather_tasks)} sources, sequential)")
-        _run_sequential(weather_tasks, label="weather")
+        return _run_sequential(weather_tasks, label="weather")
 
     def _update_other():
         # Sequential: yfinance is not thread-safe (concurrent calls corrupt results)
-        logger.info(f"Updating commodities + Energy Charts ({len(other_tasks)} sources, sequential)")
-        _run_sequential(other_tasks, label="commodities")
+        logger.info(
+            f"Updating commodities + Energy Charts ({len(other_tasks)} sources, sequential)"
+        )
+        return _run_sequential(other_tasks, label="commodities")
 
-    _run_parallel(
+    failures = _run_parallel(
         [
             (_update_weather, "weather-group"),
             (_update_smard, "smard-group"),
@@ -244,6 +268,7 @@ def update_all_sources():
         max_workers=3,
         label="all",
     )
+    _exit_if_failures(failures)
 
 
 @update_app.command("smard")
@@ -259,7 +284,7 @@ def update_smard():
     for tso_name in TSO_REGIONS:
         s = SmardSource(tso_name)
         tasks.append((s.update, f"SMARD/{tso_name}"))
-    _run_parallel(tasks, max_workers=len(tasks), label="SMARD")
+    _exit_if_failures(_run_parallel(tasks, max_workers=len(tasks), label="SMARD"))
 
 
 @update_app.command("weather")
@@ -274,7 +299,7 @@ def update_weather():
             source = OpenMeteoSource(at, tso_name)
             if source.locations:
                 tasks.append((source.update, f"weather/{at}/{tso_name}"))
-    _run_sequential(tasks, label="weather")
+    _exit_if_failures(_run_sequential(tasks, label="weather"))
 
 
 @update_app.command("commodities")
@@ -285,7 +310,7 @@ def update_commodities():
     # Sequential: yfinance is not thread-safe (concurrent calls corrupt results)
     sources = all_commodity_sources()
     tasks = [(s.update, type(s).__name__) for s in sources]
-    _run_sequential(tasks, label="commodities")
+    _exit_if_failures(_run_sequential(tasks, label="commodities"))
 
 
 # ── Processing commands ────────────────────────────────────────────
@@ -309,9 +334,13 @@ app.add_typer(train_app, name="train")
 
 @train_app.command("gen-load")
 def train_gen_load(
-    target: str = typer.Option(None, help="Single target (wind_onshore, wind_offshore, solar, load)"),
+    target: str = typer.Option(
+        None, help="Single target (wind_onshore, wind_offshore, solar, load)"
+    ),
     region: str = typer.Option(None, help="Single region (DE_50HZ, DE_AMPRION, ...)"),
-    model_type: str = typer.Option(None, help="Single model type (LGBMRegressor, XGBRegressor, ElasticNet)"),
+    model_type: str = typer.Option(
+        None, help="Single model type (LGBMRegressor, XGBRegressor, ElasticNet)"
+    ),
     trials: int = typer.Option(70, help="Optuna trials per model"),
     skip_ensemble: bool = typer.Option(False, "--skip-ensemble", help="Skip stacking ensemble"),
     reuse_params: bool = typer.Option(
@@ -366,6 +395,9 @@ def train_gen_load(
         retrain_gen_load_from_existing,
         train_gen_load_model,
     )
+    from energy_forecasting.modeling.mlflow_utils import ensure_mlflow_tracking
+
+    ensure_mlflow_tracking()
 
     model_types = [model_type] if model_type else ["LGBMRegressor", "XGBRegressor", "ElasticNet"]
 
@@ -410,13 +442,9 @@ def train_gen_load(
             for mt in model_types
         ]
         mode = "reuse-params" if reuse_params else "Optuna search"
-        logger.info(
-            f"── Wave {wave_idx + 1}/{len(waves)}: {len(wave_jobs)} jobs ({mode}) ──"
-        )
+        logger.info(f"── Wave {wave_idx + 1}/{len(waves)}: {len(wave_jobs)} jobs ({mode}) ──")
 
-        run_ids_by_combo: dict[tuple[str, str], dict[str, str]] = {
-            (t, r): {} for (t, r) in wave
-        }
+        run_ids_by_combo: dict[tuple[str, str], dict[str, str]] = {(t, r): {} for (t, r) in wave}
 
         if parallel > 1:
             import multiprocessing as _mp
@@ -458,12 +486,18 @@ def train_gen_load(
                 try:
                     if reuse:
                         run_id = retrain_gen_load_from_existing(
-                            target=t, region=r, model_type=mt, n_jobs=n_jobs,
+                            target=t,
+                            region=r,
+                            model_type=mt,
+                            n_jobs=n_jobs,
                         )
                     else:
                         run_id = train_gen_load_model(
-                            target=t, region=r, model_type=mt,
-                            optuna_trials=trials, n_jobs=n_jobs,
+                            target=t,
+                            region=r,
+                            model_type=mt,
+                            optuna_trials=trials,
+                            n_jobs=n_jobs,
                         )
                     results[label] = run_id
                     run_ids_by_combo[(t, r)][mt] = run_id
@@ -474,7 +508,7 @@ def train_gen_load(
         # Per-(target, region) ensemble + historical-forecasts export. These
         # are sequential because they read freshly-written MLflow artifacts
         # and run quickly (~30 s each); not worth process-pooling.
-        for (t, r) in wave:
+        for t, r in wave:
             base_run_metrics = run_ids_by_combo[(t, r)]
             base_run_ids = list(base_run_metrics.values())
 
@@ -489,7 +523,9 @@ def train_gen_load(
                     failures.append(f"{t}/{r}/ensemble")
 
             chosen_run_id = ensemble_run_id or _pick_best_base_run(
-                t, r, base_run_metrics,
+                t,
+                r,
+                base_run_metrics,
             )
             if chosen_run_id is not None:
                 try:
@@ -595,7 +631,9 @@ def _train_one_combo(
 
 
 def _pick_best_base_run(
-    target: str, region: str, base_runs: dict[str, str],
+    target: str,
+    region: str,
+    base_runs: dict[str, str],
 ) -> str | None:
     """Pick the base run with the lowest CV MAE.
 
@@ -610,6 +648,9 @@ def _pick_best_base_run(
         return None
     import mlflow
 
+    from energy_forecasting.modeling.mlflow_utils import ensure_mlflow_tracking
+
+    ensure_mlflow_tracking()
     client = mlflow.MlflowClient()
     by_cv: list[tuple[float, str]] = []
     by_holdout: list[tuple[float, str]] = []
@@ -632,7 +673,9 @@ def _pick_best_base_run(
 
 
 def _export_historical_forecasts(
-    target: str, region: str, run_id: str,
+    target: str,
+    region: str,
+    run_id: str,
 ) -> None:
     """Concatenate OOF + holdout predictions for one run and save to disk.
 
@@ -648,6 +691,9 @@ def _export_historical_forecasts(
     import pandas as pd
 
     from energy_forecasting.config import PROCESSED_DATA_DIR
+    from energy_forecasting.modeling.mlflow_utils import ensure_mlflow_tracking
+
+    ensure_mlflow_tracking()
 
     out_dir = PROCESSED_DATA_DIR / "historical_forecasts"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -746,7 +792,9 @@ def features(
     feature_list: str = typer.Option("slim", help="Feature list: slim, full, gen_load"),
     input_path: Path = typer.Option(None, help="Input merged.parquet path"),
     output: Path = typer.Option(None, help="Output features parquet path"),
-    validate_only: bool = typer.Option(False, "--validate-only", help="Only validate, don't compute"),
+    validate_only: bool = typer.Option(
+        False, "--validate-only", help="Only validate, don't compute"
+    ),
 ):
     """Compute feature matrix from merged data using the suffix DSL."""
     from energy_forecasting.config import PROCESSED_DATA_DIR
@@ -803,20 +851,20 @@ def train_price(
         "max",
         "--feature-versions",
         help="Comma-separated feature_version list (slim, full, max). "
-             "Default 'max'; use 'slim' for a quick wiring check. "
-             "Ignored when --feature-selection is set.",
+        "Default 'max'; use 'slim' for a quick wiring check. "
+        "Ignored when --feature-selection is set.",
     ),
     quick: bool = typer.Option(
         False,
         "--quick",
         help="Quick smoke run: feature_versions=slim, three tree families "
-             "+ Ridge (omits Lasso to keep wall time short).",
+        "+ Ridge (omits Lasso to keep wall time short).",
     ),
     feature_selection: bool = typer.Option(
         False,
         "--feature-selection",
         help="Run feature_selection on the MAX dataset, then tune over the "
-             "top-K candidate feature sets discovered.",
+        "top-K candidate feature sets discovered.",
     ),
     top_k: int = typer.Option(
         4,
@@ -832,13 +880,16 @@ def train_price(
         None,
         "--pin-feature-version",
         help="Skip feature selection and tune only on the named dataset "
-             "(e.g. 'fs_shap_top60'). Use for ongoing retrains once a feature "
-             "set has been chosen from a research run.",
+        "(e.g. 'fs_shap_top60'). Use for ongoing retrains once a feature "
+        "set has been chosen from a research run.",
     ),
 ):
     """End-to-end price pipeline: tune → retrain → ensemble bake-off → write ensemble_config.json."""
+    from energy_forecasting.modeling.mlflow_utils import ensure_mlflow_tracking
     from energy_forecasting.modeling.price import run_price_pipeline
     from energy_forecasting.modeling.tuning import PRICE_LINEAR_TYPES, PRICE_TREE_TYPES
+
+    ensure_mlflow_tracking()
 
     if quick:
         # Quick smoke: slim features, all three tree families, plus Ridge.
@@ -906,9 +957,10 @@ def _write_gen_load_config(target: str, region: str, run_id: str) -> None:
 
     import mlflow
 
-    from energy_forecasting.config import MLFLOW_TRACKING_URI, MODELS_DIR
+    from energy_forecasting.config import MODELS_DIR
+    from energy_forecasting.modeling.mlflow_utils import ensure_mlflow_tracking
 
-    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    ensure_mlflow_tracking()
     client = mlflow.MlflowClient()
     config_path = client.download_artifacts(run_id, "optuna/best_config.json")
     with open(config_path) as f:
@@ -930,9 +982,7 @@ def _write_gen_load_config(target: str, region: str, run_id: str) -> None:
         "weather_config": best_config["weather_config"],
         "dataset_params": best_config["dataset_params"],
     }
-    gl_config["generated_at"] = (
-        datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    )
+    gl_config["generated_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     with open(config_file, "w") as f:
         json.dump(gl_config, f, indent=2, default=str)
     logger.info(f"Updated gen_load_config.json: {combo_key} → {run_id[:8]}")
@@ -953,12 +1003,11 @@ def gen_load_config_cmd(
     Run this once after training to bootstrap the config file if the training
     run that wrote it is no longer available.
     """
-    import mlflow
 
-    from energy_forecasting.config import MLFLOW_TRACKING_URI
     from energy_forecasting.config.modeling import GEN_LOAD_TARGETS
+    from energy_forecasting.modeling.mlflow_utils import ensure_mlflow_tracking
 
-    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    ensure_mlflow_tracking()
 
     from energy_forecasting.deploy.model_store import (
         GEN_LOAD_CONFIG_PATH,
@@ -1055,9 +1104,7 @@ def retrain_cmd(
     price_only: bool = typer.Option(
         False, "--price-only", help="Retrain only price models (not gen/load)"
     ),
-    force: bool = typer.Option(
-        False, "--force", help="Retrain even if no degradation detected"
-    ),
+    force: bool = typer.Option(False, "--force", help="Retrain even if no degradation detected"),
     holdout_days: int = typer.Option(
         None, "--holdout-days", help="Override holdout days for degradation check"
     ),

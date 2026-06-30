@@ -386,19 +386,39 @@ def test_normalize_dst_normal_day():
 # -- validate_no_nans tests -------------------------------------------------
 
 
-def test_validate_no_nans_warns_critical(caplog):
+def test_validate_no_nans_fails_internal_target_gap():
     idx = pd.date_range("2020-01-01", periods=10, freq="h", tz="UTC")
     df = pd.DataFrame({"target_price": [1, 2, np.nan, 4, 5, 6, 7, 8, 9, 10]}, index=idx)
 
-    # Use loguru's sink to capture
-    messages = []
-    handler_id = logger.add(lambda msg: messages.append(str(msg)), level="WARNING")
-    try:
+    with pytest.raises(ValueError, match="internal or trailing"):
         validate_no_nans(df, critical_cols=["target_price"])
-    finally:
-        logger.remove(handler_id)
 
-    assert any("CRITICAL" in m and "target_price" in m for m in messages)
+
+def test_validate_no_nans_allows_explicit_initial_target_gap():
+    idx = pd.date_range("2020-01-01", periods=5, freq="h", tz="UTC")
+    df = pd.DataFrame({"target_price": [np.nan, np.nan, 3.0, 4.0, 5.0]}, index=idx)
+
+    validate_no_nans(
+        df,
+        critical_cols=["target_price"],
+        allow_initial_target_gap=True,
+    )
+
+
+def test_validate_no_nans_fails_unexpected_initial_target_gap():
+    idx = pd.date_range("2020-01-01", periods=5, freq="h", tz="UTC")
+    df = pd.DataFrame({"target_price": [np.nan, np.nan, 3.0, 4.0, 5.0]}, index=idx)
+
+    with pytest.raises(ValueError, match="initial gap"):
+        validate_no_nans(df, critical_cols=["target_price"])
+
+
+def test_validate_no_nans_fails_critical_generation_gap():
+    idx = pd.date_range("2020-01-01", periods=5, freq="h", tz="UTC")
+    df = pd.DataFrame({"stromerzeugung_wind_onshore": [1.0, np.nan, 3.0, 4.0, 5.0]}, index=idx)
+
+    with pytest.raises(ValueError, match="CRITICAL stromerzeugung_wind_onshore"):
+        validate_no_nans(df, critical_cols=["stromerzeugung_wind_onshore"])
 
 
 def test_validate_no_nans_passes_clean():

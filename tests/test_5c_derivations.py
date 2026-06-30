@@ -8,7 +8,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-
 from energy_forecasting.config.features import GENERATION_COLUMNS
 from energy_forecasting.features.engine import engineer_features
 from energy_forecasting.features.market import (
@@ -21,7 +20,6 @@ from energy_forecasting.modeling.gen_load_forecasts import (
     FORECAST_TARGETS,
     load_gen_load_forecasts,
 )
-
 
 # ── compute_eeg_regime ──────────────────────────────────────────────
 
@@ -75,7 +73,7 @@ def test_neg_price_stats_zero_negatives():
     stats = compute_neg_price_stats(price)
     assert stats["_derived_neg_price_frac_30d"].eq(0).all()
     assert stats["_derived_neg_price_frac_90d"].eq(0).all()
-    assert stats["_derived_neg_price_depth_30d"].isna().all()
+    assert stats["_derived_neg_price_depth_30d"].eq(0).all()
 
 
 def test_neg_price_stats_all_negatives():
@@ -85,7 +83,7 @@ def test_neg_price_stats_all_negatives():
     # After the rolling window fills (30d × 24h), frac = 1.0
     assert stats["_derived_neg_price_frac_30d"].iloc[-1] == 1.0
     assert stats["_derived_neg_price_frac_90d"].iloc[-1] == 1.0
-    assert stats["_derived_neg_price_depth_30d"].iloc[-1] == -10.0
+    assert stats["_derived_neg_price_depth_30d"].iloc[-1] == 10.0
 
 
 def test_neg_price_stats_known_fraction():
@@ -97,7 +95,15 @@ def test_neg_price_stats_known_fraction():
     # After 30 days the window is full → exactly 1/10 of hours are negative.
     tail = stats["_derived_neg_price_frac_30d"].iloc[-1]
     assert tail == pytest.approx(0.1, abs=1e-9)
-    assert stats["_derived_neg_price_depth_30d"].iloc[-1] == pytest.approx(-5.0, abs=1e-9)
+    assert stats["_derived_neg_price_depth_30d"].iloc[-1] == pytest.approx(0.5, abs=1e-9)
+
+
+def test_neg_price_stats_expand_before_full_window():
+    idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
+    price = pd.Series([-5.0, 10.0, -15.0, 20.0], index=idx)
+    stats = compute_neg_price_stats(price)
+    assert stats["_derived_neg_price_frac_30d"].tolist() == [1.0, 0.5, 2 / 3, 0.5]
+    assert stats["_derived_neg_price_depth_30d"].tolist() == [5.0, 2.5, 20 / 3, 5.0]
 
 
 # ── compute_generation_pct (per-technology prognosis) ──────────────
@@ -209,6 +215,40 @@ def test_load_gen_load_forecasts_handles_naive_index(fake_forecasts_root):
     out = load_gen_load_forecasts(idx, root=fake_forecasts_root)
     assert out.index.tz is None
     assert out["_derived_forecast_load"].notna().all()
+
+
+def test_load_gen_load_forecasts_converts_utc_to_naive_berlin_winter(tmp_path):
+    src_idx = pd.DatetimeIndex([pd.Timestamp("2026-01-01 00:00", tz="UTC")])
+    _write_forecast_parquet(tmp_path / "load_DE_NATIONAL.parquet", src_idx, 123.0)
+    target_idx = pd.DatetimeIndex([pd.Timestamp("2026-01-01 01:00")])
+    out = load_gen_load_forecasts(target_idx, columns=["_derived_forecast_load"], root=tmp_path)
+    assert out["_derived_forecast_load"].iloc[0] == pytest.approx(123.0)
+
+
+def test_load_gen_load_forecasts_converts_utc_to_naive_berlin_summer(tmp_path):
+    src_idx = pd.DatetimeIndex([pd.Timestamp("2026-07-01 00:00", tz="UTC")])
+    _write_forecast_parquet(tmp_path / "load_DE_NATIONAL.parquet", src_idx, 456.0)
+    target_idx = pd.DatetimeIndex([pd.Timestamp("2026-07-01 02:00")])
+    out = load_gen_load_forecasts(target_idx, columns=["_derived_forecast_load"], root=tmp_path)
+    assert out["_derived_forecast_load"].iloc[0] == pytest.approx(456.0)
+
+
+def test_load_gen_load_forecasts_averages_dst_fallback_duplicate(tmp_path):
+    path = tmp_path / "load_DE_NATIONAL.parquet"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    src_idx = pd.DatetimeIndex(
+        [
+            pd.Timestamp("2026-10-25 00:00", tz="UTC"),
+            pd.Timestamp("2026-10-25 01:00", tz="UTC"),
+        ]
+    )
+    pd.DataFrame(
+        {"y_true": [10.0, 30.0], "y_pred": [10.0, 30.0], "y_lower": np.nan, "y_upper": np.nan},
+        index=src_idx,
+    ).to_parquet(path)
+    target_idx = pd.DatetimeIndex([pd.Timestamp("2026-10-25 02:00")])
+    out = load_gen_load_forecasts(target_idx, columns=["_derived_forecast_load"], root=tmp_path)
+    assert out["_derived_forecast_load"].iloc[0] == pytest.approx(20.0)
 
 
 def test_forecast_targets_cover_documented_short_names():

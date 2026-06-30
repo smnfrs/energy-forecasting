@@ -12,8 +12,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pytest
-
 from energy_forecasting.modeling.price import (
     FEATURE_LISTS,
     PRICE_TARGET,
@@ -53,7 +51,8 @@ def _fake_artifact_pair(
     run_dir = tmp_path / name / "predictions"
     run_dir.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(
-        {"y_true": y_oof, "y_pred": oof_preds}, index=oof_idx,
+        {"y_true": y_oof, "y_pred": oof_preds},
+        index=oof_idx,
     ).to_parquet(run_dir / "oof_predictions.parquet")
     pd.DataFrame(
         {
@@ -81,7 +80,14 @@ def test_stack_predictions_returns_aligned_matrices(tmp_path, monkeypatch):
         oof_preds = y_oof + (i + 1)
         hold_preds = y_hold + (i + 1)
         artifact_dirs[name] = _fake_artifact_pair(
-            tmp_path, name, oof_idx, hold_idx, oof_preds, hold_preds, y_oof, y_hold,
+            tmp_path,
+            name,
+            oof_idx,
+            hold_idx,
+            oof_preds,
+            hold_preds,
+            y_oof,
+            y_hold,
         )
 
     def fake_fetch(run_id):
@@ -93,10 +99,10 @@ def test_stack_predictions_returns_aligned_matrices(tmp_path, monkeypatch):
     monkeypatch.setattr(price_module, "_fetch_predictions", fake_fetch)
 
     model_runs = [
-        _ModelRun(name="m0", run_id="m0", model_type="LGBMRegressor",
-                  feature_version="slim", config={}),
-        _ModelRun(name="m1", run_id="m1", model_type="Ridge",
-                  feature_version="slim", config={}),
+        _ModelRun(
+            name="m0", run_id="m0", model_type="LGBMRegressor", feature_version="slim", config={}
+        ),
+        _ModelRun(name="m1", run_id="m1", model_type="Ridge", feature_version="slim", config={}),
     ]
     preds_oof, y_oof_out, preds_hold, y_hold_out = _stack_predictions(model_runs)
     assert list(preds_oof.columns) == ["m0", "m1"]
@@ -125,12 +131,24 @@ def test_stack_predictions_intersects_indices(tmp_path, monkeypatch):
 
     artifact_dirs = {
         "m0": _fake_artifact_pair(
-            tmp_path, "m0", full_idx, hold_idx,
-            y_full + 1, y_hold + 1, y_full, y_hold,
+            tmp_path,
+            "m0",
+            full_idx,
+            hold_idx,
+            y_full + 1,
+            y_hold + 1,
+            y_full,
+            y_hold,
         ),
         "m1": _fake_artifact_pair(
-            tmp_path, "m1", short_idx, hold_idx,
-            y_short + 2, y_hold + 2, y_short, y_hold,
+            tmp_path,
+            "m1",
+            short_idx,
+            hold_idx,
+            y_short + 2,
+            y_hold + 2,
+            y_short,
+            y_hold,
         ),
     }
 
@@ -143,10 +161,10 @@ def test_stack_predictions_intersects_indices(tmp_path, monkeypatch):
     monkeypatch.setattr(price_module, "_fetch_predictions", fake_fetch)
 
     model_runs = [
-        _ModelRun(name="m0", run_id="m0", model_type="LGBMRegressor",
-                  feature_version="slim", config={}),
-        _ModelRun(name="m1", run_id="m1", model_type="Ridge",
-                  feature_version="slim", config={}),
+        _ModelRun(
+            name="m0", run_id="m0", model_type="LGBMRegressor", feature_version="slim", config={}
+        ),
+        _ModelRun(name="m1", run_id="m1", model_type="Ridge", feature_version="slim", config={}),
     ]
     preds_oof, y_oof_out, preds_hold, y_hold_out = _stack_predictions(model_runs)
     assert len(preds_oof) == 80  # intersection size

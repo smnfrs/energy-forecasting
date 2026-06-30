@@ -66,9 +66,7 @@ def health() -> HealthResponse:
     if data_available:
         try:
             raw = deps.get_price_forecast()
-            last_data_update = datetime.fromisoformat(
-                raw["issued_at"].replace("Z", "+00:00")
-            )
+            last_data_update = datetime.fromisoformat(raw["issued_at"].replace("Z", "+00:00"))
         except Exception:
             pass
 
@@ -106,9 +104,7 @@ def generation_forecast(gen_type: str) -> ForecastResponse:
     try:
         return _parse_forecast_response(deps.get_gen_load_forecast(gen_type))
     except FileNotFoundError:
-        raise HTTPException(
-            status_code=503, detail=f"{gen_type} forecast not yet available"
-        )
+        raise HTTPException(status_code=503, detail=f"{gen_type} forecast not yet available")
 
 
 @router.get("/forecast/load", response_model=ForecastResponse)
@@ -152,9 +148,7 @@ def models() -> ModelsResponse:
         holdout_mae=meta.get("holdout_mae", 0.0),
         holdout_rmse=meta.get("holdout_rmse", 0.0),
         pi_coverage=meta.get("pi_coverage"),
-        last_retrain=datetime.fromisoformat(
-            meta["last_retrain"].replace("Z", "+00:00")
-        ),
+        last_retrain=datetime.fromisoformat(meta["last_retrain"].replace("Z", "+00:00")),
     )
 
 

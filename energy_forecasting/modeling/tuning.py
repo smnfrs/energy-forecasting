@@ -107,7 +107,9 @@ def _evaluate_config(
     for train_idx, test_idx in cv_splitter.split(X_pool.index):
         model = _make_model(model_type, model_params)
         pipeline = build_pipeline(
-            model, scaler=scaler, target_transform=target_transform,
+            model,
+            scaler=scaler,
+            target_transform=target_transform,
         )
         fit_params: dict = {}
         if weights is not None:
@@ -117,10 +119,7 @@ def _evaluate_config(
         preds = pipeline.predict(X_pool.iloc[test_idx])
         fold_metrics.append(calculate_metrics(y_pool.iloc[test_idx], preds))
 
-    return {
-        f"cv_{k}": float(np.mean([m[k] for m in fold_metrics]))
-        for k in fold_metrics[0]
-    }
+    return {f"cv_{k}": float(np.mean([m[k] for m in fold_metrics])) for k in fold_metrics[0]}
 
 
 # ── Study helpers ───────────────────────────────────────────────
@@ -171,13 +170,15 @@ def _log_trial_to_mlflow(
         "tuning_step": tuning_step,
     }
     with TrackedRun(experiment, dataset_name=dataset_path.stem, **tags):
-        mlflow.log_params({
-            "model_type": model_type,
-            "scaler": scaler,
-            "target_transform": target_transform,
-            "weight_half_life": str(weight_half_life),
-            **{f"hp_{k}": v for k, v in model_params.items()},
-        })
+        mlflow.log_params(
+            {
+                "model_type": model_type,
+                "scaler": scaler,
+                "target_transform": target_transform,
+                "weight_half_life": str(weight_half_life),
+                **{f"hp_{k}": v for k, v in model_params.items()},
+            }
+        )
         mlflow.log_metrics(cv_metrics)
 
 
@@ -222,11 +223,15 @@ def tune_tree_model(
 
     def stage1_obj(trial: optuna.Trial) -> float:
         wh_idx = trial.suggest_int(
-            "weight_half_life_idx", 0, len(WEIGHT_HALF_LIVES) - 1,
+            "weight_half_life_idx",
+            0,
+            len(WEIGHT_HALF_LIVES) - 1,
         )
         weight = WEIGHT_HALF_LIVES[wh_idx]
         metrics = _evaluate_config(
-            X_pool, y_pool, cv,
+            X_pool,
+            y_pool,
+            cv,
             model_type=model_type,
             model_params=probe,
             scaler="none",
@@ -268,7 +273,9 @@ def tune_tree_model(
         # Merge probe defaults with the grid override.
         params = {**probe, **grid_configs[idx]}
         metrics = _evaluate_config(
-            X_pool, y_pool, cv,
+            X_pool,
+            y_pool,
+            cv,
             model_type=model_type,
             model_params=params,
             scaler="none",
@@ -348,7 +355,9 @@ def tune_linear_model(
         params: dict[str, Any] = {"alpha": alphas[alpha_idx]}
 
         metrics = _evaluate_config(
-            X_pool, y_pool, cv,
+            X_pool,
+            y_pool,
+            cv,
             model_type=model_type,
             model_params=params,
             scaler=scaler,
@@ -409,10 +418,16 @@ def tune_all_price_models(
     winners: dict[str, dict[str, Any]] = {}
     for mt in tree_types:
         winners[mt] = tune_tree_model(
-            dataset_path, mt, feature_version=feature_version, **kwargs,
+            dataset_path,
+            mt,
+            feature_version=feature_version,
+            **kwargs,
         )
     for mt in linear_types:
         winners[mt] = tune_linear_model(
-            dataset_path, mt, feature_version=feature_version, **kwargs,
+            dataset_path,
+            mt,
+            feature_version=feature_version,
+            **kwargs,
         )
     return winners

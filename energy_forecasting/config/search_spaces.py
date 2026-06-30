@@ -10,6 +10,7 @@ import numpy as np
 
 # ── Optuna suggest functions (for gen/load TPE search) ─────────────
 
+
 def suggest_lgbm(trial) -> dict:
     """LightGBM search space. Based on EP production: lr=0.008-0.02, reg_alpha/lambda=5-7."""
     return {
@@ -156,14 +157,62 @@ PRICE_TREE_WEIGHT_PROBE = {
 # because their growth is depth-bounded by construction.
 PRICE_TREE_GRID = {
     "LGBMRegressor": [
-        {"learning_rate": 0.008, "max_depth": 8, "num_leaves": 255, "reg_alpha": 5.0, "n_estimators": 1000},
-        {"learning_rate": 0.015, "max_depth": 6, "num_leaves": 63, "reg_alpha": 7.0, "n_estimators": 800},
-        {"learning_rate": 0.012, "max_depth": 8, "num_leaves": 255, "reg_alpha": 10.0, "n_estimators": 1000},
-        {"learning_rate": 0.02, "max_depth": 10, "num_leaves": 1023, "reg_alpha": 3.0, "n_estimators": 1200},
-        {"learning_rate": 0.008, "max_depth": 7, "num_leaves": 127, "reg_alpha": 5.0, "n_estimators": 800},
-        {"learning_rate": 0.01, "max_depth": 9, "num_leaves": 511, "reg_alpha": 8.0, "n_estimators": 1100},
-        {"learning_rate": 0.025, "max_depth": 6, "num_leaves": 63, "reg_alpha": 5.0, "n_estimators": 900},
-        {"learning_rate": 0.008, "max_depth": 8, "num_leaves": 255, "reg_alpha": 12.0, "n_estimators": 1000},
+        {
+            "learning_rate": 0.008,
+            "max_depth": 8,
+            "num_leaves": 255,
+            "reg_alpha": 5.0,
+            "n_estimators": 1000,
+        },
+        {
+            "learning_rate": 0.015,
+            "max_depth": 6,
+            "num_leaves": 63,
+            "reg_alpha": 7.0,
+            "n_estimators": 800,
+        },
+        {
+            "learning_rate": 0.012,
+            "max_depth": 8,
+            "num_leaves": 255,
+            "reg_alpha": 10.0,
+            "n_estimators": 1000,
+        },
+        {
+            "learning_rate": 0.02,
+            "max_depth": 10,
+            "num_leaves": 1023,
+            "reg_alpha": 3.0,
+            "n_estimators": 1200,
+        },
+        {
+            "learning_rate": 0.008,
+            "max_depth": 7,
+            "num_leaves": 127,
+            "reg_alpha": 5.0,
+            "n_estimators": 800,
+        },
+        {
+            "learning_rate": 0.01,
+            "max_depth": 9,
+            "num_leaves": 511,
+            "reg_alpha": 8.0,
+            "n_estimators": 1100,
+        },
+        {
+            "learning_rate": 0.025,
+            "max_depth": 6,
+            "num_leaves": 63,
+            "reg_alpha": 5.0,
+            "n_estimators": 900,
+        },
+        {
+            "learning_rate": 0.008,
+            "max_depth": 8,
+            "num_leaves": 255,
+            "reg_alpha": 12.0,
+            "n_estimators": 1000,
+        },
     ],
     "XGBRegressor": [
         {"learning_rate": 0.023, "max_depth": 8, "reg_alpha": 5.0, "n_estimators": 1000},
@@ -189,7 +238,7 @@ PRICE_TREE_GRID = {
 # ── Linear model grids ───────────────────────────────────────────
 LINEAR_ALPHA_GRID = {
     "Ridge": np.logspace(-3, 1, 15).tolist(),  # 0.001 to 10
-    "Lasso": np.logspace(-3, 0, 9).tolist(),   # 0.001 to 1
+    "Lasso": np.logspace(-3, 0, 9).tolist(),  # 0.001 to 1
 }
 
 # ── Preprocessing ─────────────────────────────────────────────────
@@ -204,6 +253,9 @@ TREE_PREPROCESSING = {"scaler": "none", "target_transform": "none"}
 # Linear models: scaler × weight_half_life grid. Target transform is pinned
 # to "none" (dropped as a search axis — empirically no gain, and log/yeo
 # blew up Ridge/Lasso), so it is no longer part of the tuple.
-LINEAR_PREPROCESSING_GRID = list(itertools.product(
-    FEATURE_SCALERS, WEIGHT_HALF_LIVES,
-))  # 2 × 4 = 8 combos
+LINEAR_PREPROCESSING_GRID = list(
+    itertools.product(
+        FEATURE_SCALERS,
+        WEIGHT_HALF_LIVES,
+    )
+)  # 2 × 4 = 8 combos

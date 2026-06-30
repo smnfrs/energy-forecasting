@@ -50,7 +50,7 @@ class TestNaiveSeasonal7d:
         # First week should be NaN (no prior data)
         assert result.iloc[:168].isna().all()
         # After 2 weeks, should have values
-        assert not result.iloc[2 * 168:].isna().all()
+        assert not result.iloc[2 * 168 :].isna().all()
 
     def test_shape_preserved(self, hourly_series):
         result = naive_seasonal_7d(hourly_series)

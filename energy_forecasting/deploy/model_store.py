@@ -46,9 +46,7 @@ def load_gen_load_config() -> dict:
 
 def load_ensemble_config() -> dict:
     if not ENSEMBLE_CONFIG_PATH.exists():
-        raise FileNotFoundError(
-            f"{ENSEMBLE_CONFIG_PATH} not found. Run stage 5c training first."
-        )
+        raise FileNotFoundError(f"{ENSEMBLE_CONFIG_PATH} not found. Run stage 5c training first.")
     with open(ENSEMBLE_CONFIG_PATH) as f:
         return json.load(f)
 
@@ -58,6 +56,21 @@ def _download_model(run_id: str) -> object:
     client = _mlflow_client()
     local_dir = client.download_artifacts(run_id, "model")
     return mlflow.sklearn.load_model(local_dir)
+
+
+def _download_scaler(run_id: str) -> object | None:
+    """Download the separate scaler artifact for one MLflow run, if it exists.
+
+    Some models (Ridge/Lasso with sample_weight) use the pre-scale workaround:
+    X is scaled externally before MAPIE, so the scaler is saved as a separate
+    MLflow artifact named "scaler". Returns None if no scaler artifact exists.
+    """
+    client = _mlflow_client()
+    try:
+        local_dir = client.download_artifacts(run_id, "scaler")
+        return mlflow.sklearn.load_model(local_dir)
+    except Exception:
+        return None
 
 
 # ── Gen/load export ───────────────────────────────────────────────
@@ -99,9 +112,7 @@ def load_gen_load_model(target: str, region: str) -> object:
     """Load a gen/load model from disk."""
     path = GEN_LOAD_MODELS_DIR / f"{target}_{region}.joblib"
     if not path.exists():
-        raise FileNotFoundError(
-            f"{path} not found. Run 'energy-forecasting export-models' first."
-        )
+        raise FileNotFoundError(f"{path} not found. Run 'energy-forecasting export-models' first.")
     return joblib.load(path)
 
 
@@ -120,6 +131,8 @@ def export_price_models(config: dict | None = None) -> list[Path]:
     """Export production price models from MLflow to models/price/.
 
     Only exports non-zero-weight ensemble members.
+    For models that use the pre-scale workaround (Ridge/Lasso), also exports
+    the separate scaler artifact as {run_id}_scaler.joblib.
     """
     if config is None:
         config = load_ensemble_config()
@@ -140,19 +153,32 @@ def export_price_models(config: dict | None = None) -> list[Path]:
             joblib.dump(model, out_path)
             logger.info(f"  → {out_path}")
             written.append(out_path)
+
+            scaler = _download_scaler(run_id)
+            if scaler is not None:
+                scaler_path = PRICE_MODELS_DIR / f"{run_id}_scaler.joblib"
+                joblib.dump(scaler, scaler_path)
+                logger.info(f"  → {scaler_path} (pre-scale workaround)")
+                written.append(scaler_path)
         except Exception:
             logger.exception(f"Failed to export price model {entry['name']}")
 
     return written
 
 
+def load_price_model_scaler(run_id: str) -> object | None:
+    """Load the separate scaler for a price model, or None if it has none."""
+    path = PRICE_MODELS_DIR / f"{run_id}_scaler.joblib"
+    if not path.exists():
+        return None
+    return joblib.load(path)
+
+
 def load_price_model(run_id: str) -> object:
     """Load a price model from disk."""
     path = PRICE_MODELS_DIR / f"{run_id}.joblib"
     if not path.exists():
-        raise FileNotFoundError(
-            f"{path} not found. Run 'energy-forecasting export-models' first."
-        )
+        raise FileNotFoundError(f"{path} not found. Run 'energy-forecasting export-models' first.")
     return joblib.load(path)
 
 

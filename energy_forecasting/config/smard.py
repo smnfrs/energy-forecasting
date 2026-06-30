@@ -76,7 +76,7 @@ KNOWN_MISSING: set[tuple[int, str]] = {
 }
 
 # ── SMARD API base URL ──────────────────────────────────────────────
-SMARD_API_BASE = "https://smard.api.proxy.bund.dev/app/chart_data"
+SMARD_API_BASE = "https://www.smard.de/app/chart_data"
 
 # ── Default download parameters ─────────────────────────────────────
 DEFAULT_RESOLUTION = "hour"
