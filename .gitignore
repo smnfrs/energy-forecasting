@@ -1,5 +1,5 @@
-# Data (large, downloaded at runtime)
-data/
+# Data (large, downloaded at runtime) — root-anchored so energy_forecasting/data/ is not excluded
+/data/
 
 # Models — large artifacts stored in GitHub Releases; only config JSONs tracked
 models/*.joblib
