@@ -83,7 +83,10 @@ jobs:
             models/price/ \
             models/gen_load/ \
             models/ensemble_config.json \
-            models/gen_load_config.json
+            models/gen_load_config.json \
+            data/processed/datasets/price_fs_rfecv_optimum.parquet \
+            data/processed/datasets/price_fs_shap_top90.parquet \
+            data/processed/datasets/price_fs_shap_top247.parquet
           TAG=$(gh release list --repo $REPO --limit 1 --json tagName -q '.[0].tagName')
           gh release upload "$TAG" /tmp/models.tar.gz --repo $REPO --clobber
         env:

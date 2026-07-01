@@ -60,11 +60,18 @@ jobs:
       - name: Merge and process
         run: conda run -n energy-forecasting energy-forecasting process
 
-      - name: Cache processed data
+      - name: Upload processed data artifact
         uses: actions/upload-artifact@v4
         with:
           name: processed-data-${{ github.run_id }}
           path: data/processed/
+          retention-days: 1
+
+      - name: Upload weather forecast artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: weather-data-${{ github.run_id }}
+          path: data/raw/weather/
           retention-days: 1
 
   inference:
@@ -95,6 +102,12 @@ jobs:
         with:
           name: processed-data-${{ github.run_id }}
           path: data/processed/
+
+      - name: Download weather forecasts
+        uses: actions/download-artifact@v4
+        with:
+          name: weather-data-${{ github.run_id }}
+          path: data/raw/weather/
 
       - name: Run inference (skip data update)
         run: conda run -n energy-forecasting energy-forecasting deploy forecast --skip-update
