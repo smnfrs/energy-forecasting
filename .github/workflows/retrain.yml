@@ -15,6 +15,9 @@ on:
         type: boolean
         default: true
 
+env:
+  REPO: smnfrs/energy-forecasting
+
 jobs:
   retrain:
     runs-on: ubuntu-latest
@@ -31,14 +34,13 @@ jobs:
           environment-file: environment.yml
           activate-environment: energy-forecasting
           auto-activate-base: false
-          cache-environment: true
 
       - name: Install package
         run: conda run -n energy-forecasting pip install -e .
 
       - name: Download model artifacts
         run: |
-          gh release download latest --pattern 'models.tar.gz' --dir /tmp/ --clobber
+          gh release download latest --repo $REPO --pattern 'models.tar.gz' --dir /tmp/ --clobber
           tar -xzf /tmp/models.tar.gz
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -55,7 +57,7 @@ jobs:
       - name: Bootstrap raw data from Release (cache miss only)
         if: steps.cache-raw.outputs.cache-hit != 'true'
         run: |
-          gh release download latest --pattern 'data-bootstrap.tar.gz' --dir /tmp/ --clobber || true
+          gh release download latest --repo $REPO --pattern 'data-bootstrap.tar.gz' --dir /tmp/ --clobber || true
           if [ -f /tmp/data-bootstrap.tar.gz ]; then
             mkdir -p data/
             tar -xzf /tmp/data-bootstrap.tar.gz -C data/
@@ -83,7 +85,7 @@ jobs:
             models/gen_load/ \
             models/ensemble_config.json \
             models/gen_load_config.json
-          gh release upload latest /tmp/models.tar.gz --clobber
+          gh release upload latest /tmp/models.tar.gz --repo $REPO --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
