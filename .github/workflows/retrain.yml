@@ -59,8 +59,7 @@ jobs:
         run: |
           gh release download --repo $REPO --pattern 'data-bootstrap.tar.gz' --dir /tmp/ --clobber || true
           if [ -f /tmp/data-bootstrap.tar.gz ]; then
-            mkdir -p data/
-            tar -xzf /tmp/data-bootstrap.tar.gz -C data/
+            tar -xzf /tmp/data-bootstrap.tar.gz
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

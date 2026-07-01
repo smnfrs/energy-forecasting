@@ -46,8 +46,7 @@ jobs:
         run: |
           gh release download --repo $REPO --pattern 'data-bootstrap.tar.gz' --dir /tmp/ --clobber || true
           if [ -f /tmp/data-bootstrap.tar.gz ]; then
-            mkdir -p data/
-            tar -xzf /tmp/data-bootstrap.tar.gz -C data/
+            tar -xzf /tmp/data-bootstrap.tar.gz
             echo "Bootstrapped raw data from Release"
           else
             echo "No bootstrap available; update all will run a full download"
