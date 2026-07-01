@@ -9,7 +9,7 @@ DATA_DIR = PROJ_ROOT / "data"
 RAW_DATA_DIR = DATA_DIR / "raw"
 PROCESSED_DATA_DIR = DATA_DIR / "processed"
 CACHE_DIR = PROCESSED_DATA_DIR / "cache"
-LOCATIONS_DIR = DATA_DIR / "locations"
+LOCATIONS_DIR = Path(__file__).resolve().parent
 HISTORICAL_FORECASTS_DIR = PROCESSED_DATA_DIR / "historical_forecasts"
 
 # Raw subdirectories (created by stage 2)
