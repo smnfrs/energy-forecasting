@@ -967,9 +967,9 @@ The dashboard reads from the same JSON endpoints the API serves. For GitHub Page
 
 ### Stage 7 Evaluation
 
-**Status:** Stage 7a implemented (2026-06-30) — verification gate pending local browser smoke test
+**Status:** Stage 7a + 7b complete (2026-07-01) — all 9 review items from §7.14 resolved; 512 tests pass
 
-**What was implemented:**
+**What was implemented (initial 7a, 2026-06-30):**
 - `deploy/.nojekyll`, `deploy/index.html`, `deploy/monitoring.html`, `deploy/script.js`, `deploy/monitoring.js`, `deploy/styles.css`, `deploy/translations.json` — full static site
 - `publish.py`: `write_actuals()` (30-day rolling price actuals), `write_errors_summary()` (aggregated ensemble MAE/RMSE trend), both wired into `write_outputs()`
 - `model_metadata.json` now includes `needs_reselection` flag for dashboard warning banner
@@ -977,6 +977,8 @@ The dashboard reads from the same JSON endpoints the API serves. For GitHub Page
 - 5 new Python tests in `test_deploy_publish.py`; all 509 tests pass
 - `make serve-dashboard`, `make open-dashboard`, `make test-dashboard` Makefile targets
 - `tests/test_dashboard.js` Playwright smoke test (local run only)
+
+**What was fixed/added (7a review pass + 7b, 2026-07-01):** see §7.14 and §7.15 in `docs/stage7_dashboard.md`
 
 **Deviations from plan:**
 

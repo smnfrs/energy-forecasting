@@ -125,4 +125,4 @@ open-dashboard:  ## Open the dashboard in the default browser
 	xdg-open http://localhost:8080
 
 test-dashboard:  ## Run Playwright smoke tests (requires serve-dashboard running)
-	npx playwright test tests/test_dashboard.js --headed
+	cd tests && npm install && npx playwright install chromium && npx playwright test test_dashboard.js --headed

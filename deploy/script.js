@@ -1,7 +1,8 @@
 (function () {
   "use strict";
 
-  const DATA = "data/";
+  // When a live API is available, set window.API_DATA_BASE before loading this script.
+  const DATA = (typeof window !== "undefined" && window.API_DATA_BASE) || "data/";
   let currentLang = "en";
   let translations = {};
 

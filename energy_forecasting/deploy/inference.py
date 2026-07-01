@@ -133,11 +133,10 @@ def run_inference(skip_update: bool = False) -> dict:
     validate_outputs(price_df, gen_load_results)
 
     # 5. Write outputs
-    from energy_forecasting.deploy.publish import compute_errors, write_outputs
+    from energy_forecasting.deploy.publish import write_outputs
 
     try:
         write_outputs(price_df, gen_load_results)
-        compute_errors(price_df)
     except Exception as exc:
         logger.exception("Output writing failed")
         errors["publish"] = exc

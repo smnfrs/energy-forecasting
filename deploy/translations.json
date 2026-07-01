@@ -43,7 +43,8 @@
     "retrain_log_title": "Retrain Log",
     "last_retrain": "Last retrain",
     "mae_change": "MAE change",
-    "back_to_forecast": "Back to Forecast"
+    "back_to_forecast": "Back to Forecast",
+    "gen_load_errors_title": "Generation & Load Accuracy (Last 30 Days)"
   },
   "de": {
     "title": "DE-LU Energieprognose",
@@ -89,6 +90,7 @@
     "retrain_log_title": "Retraining-Verlauf",
     "last_retrain": "Letztes Retraining",
     "mae_change": "MAE-Änderung",
-    "back_to_forecast": "Zurück zur Prognose"
+    "back_to_forecast": "Zurück zur Prognose",
+    "gen_load_errors_title": "Erzeugung & Last — Prognosegenauigkeit (letzte 30 Tage)"
   }
 }

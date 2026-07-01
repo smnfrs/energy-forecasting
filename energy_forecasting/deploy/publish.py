@@ -5,13 +5,19 @@ Output structure:
     ├── price_forecast.json          ← ForecastResponse for today's price forecast
     ├── gen_load/
     │   ├── wind_onshore_national.json
+    │   ├── wind_onshore_50hz.json   (per-TSO)
+    │   ├── ...
     │   ├── wind_offshore_national.json
     │   ├── solar_national.json
     │   └── load_national.json
     ├── forecast_history.json        ← rolling 30-day price history
     ├── model_metadata.json          ← ensemble composition
-    └── errors/
-        └── {date}.json              ← daily MAE/RMSE once actuals are available
+    ├── actuals.json                 ← rolling 30-day price actuals
+    ├── gen_load_actuals.json        ← rolling 7-day gen/load actuals
+    ├── errors/
+    │   └── {date}.json              ← daily price MAE/RMSE once actuals available
+    ├── errors_summary.json          ← aggregated price error trend (30 days)
+    └── gen_load_errors_summary.json ← per-target gen/load MAE trend (30 days)
 
 All files are loaded by the FastAPI server's dependency layer and served as-is.
 """
@@ -33,6 +39,35 @@ HISTORY_PATH = DEPLOY_DATA_DIR / "forecast_history.json"
 METADATA_PATH = DEPLOY_DATA_DIR / "model_metadata.json"
 PRICE_FORECAST_PATH = DEPLOY_DATA_DIR / "price_forecast.json"
 HISTORY_DAYS = 30
+
+# TSO region code → per-TSO filename suffix (must match JS GEN_LOAD_CARDS tso keys)
+_REGION_SUFFIX: dict[str, str] = {
+    "DE_50HZ": "50hz",
+    "DE_AMPRION": "amprion",
+    "DE_TENNET": "tennet",
+    "DE_TRANSNETBW": "transnetbw",
+    "DE_CREOS": "creos",
+}
+
+# TSO parquet filename stem → column suffix inside that parquet
+_TSO_COL_SUFFIX: dict[str, str] = {
+    "50Hertz": "_50hz",
+    "Amprion": "_ampr",
+    "TenneT": "_tenn",
+    "TransnetBW": "_tran",
+    "Creos": "_lu",
+}
+
+# Per-target list of TSO parquets that contribute to national sum.
+# Must match GEN_LOAD_TARGETS regions in config/modeling.py.
+_TARGET_TSO_FILES: dict[str, list[str]] = {
+    "wind_onshore": ["50Hertz", "Amprion", "TenneT", "TransnetBW"],
+    "wind_offshore": ["50Hertz", "TenneT"],
+    "solar": ["50Hertz", "Amprion", "TenneT", "TransnetBW"],
+    "load": ["50Hertz", "Amprion", "TenneT", "TransnetBW", "Creos"],
+}
+
+_GEN_LOAD_DISPLAY_TARGETS = {"wind_onshore", "wind_offshore", "solar", "load"}
 
 
 def _ts(dt) -> str:
@@ -124,7 +159,7 @@ def write_gen_load_forecasts(
     gen_load_results: dict,
     issued_at: str | None = None,
 ) -> None:
-    """Write national gen/load forecast JSONs."""
+    """Write national and per-TSO gen/load forecast JSONs."""
     GEN_LOAD_DATA_DIR.mkdir(parents=True, exist_ok=True)
     issued_at = issued_at or _now_utc()
 
@@ -134,13 +169,9 @@ def write_gen_load_forecasts(
         "solar": "solar_national.json",
         "load": "load_national.json",
     }
-    units = {
-        "wind_onshore": "MW",
-        "wind_offshore": "MW",
-        "solar": "MW",
-        "load": "MW",
-    }
+    units = {t: "MW" for t in _GEN_LOAD_DISPLAY_TARGETS}
 
+    # National files
     for target, filename in target_to_file.items():
         key = (target, "DE_NATIONAL")
         if key not in gen_load_results:
@@ -158,6 +189,27 @@ def write_gen_load_forecasts(
         out = GEN_LOAD_DATA_DIR / filename
         out.write_text(json.dumps(payload, indent=2))
         logger.info(f"Written {out}")
+
+    # Per-TSO files — enable the TSO toggles in the dashboard cards
+    for (target, region), df in gen_load_results.items():
+        if target not in _GEN_LOAD_DISPLAY_TARGETS:
+            continue
+        suffix = _REGION_SUFFIX.get(region)
+        if suffix is None:
+            continue
+        payload = {
+            "target": target,
+            "region": region,
+            "issued_at": issued_at,
+            "horizon_hours": len(df),
+            "unit": "MW",
+            "forecasts": _hourly_entries(df),
+        }
+        out = GEN_LOAD_DATA_DIR / f"{target}_{suffix}.json"
+        out.write_text(json.dumps(payload, indent=2))
+        logger.debug(f"Written {out}")
+
+    logger.info("Gen/load forecast JSONs written (national + per-TSO)")
 
 
 def write_model_metadata(issued_at: str | None = None) -> None:
@@ -238,6 +290,73 @@ def write_actuals() -> None:
     logger.info(f"Written actuals.json ({len(days)} days)")
 
 
+def write_gen_load_actuals() -> None:
+    """Write rolling 7-day actual gen/load to gen_load_actuals.json."""
+    from energy_forecasting.config import PROCESSED_DATA_DIR
+
+    tso_dir = PROCESSED_DATA_DIR / "tso"
+    if not tso_dir.exists():
+        return
+
+    # Load per-TSO processed parquets
+    tso_dfs: dict[str, pd.DataFrame] = {}
+    for tso_name in _TSO_COL_SUFFIX:
+        path = tso_dir / f"{tso_name}.parquet"
+        if path.exists():
+            try:
+                tso_dfs[tso_name] = pd.read_parquet(path)
+            except Exception:
+                logger.warning(f"Could not load {path}")
+
+    if not tso_dfs:
+        return
+
+    result: dict[str, dict] = {}
+    for target, tsos in _TARGET_TSO_FILES.items():
+        series_list = []
+        for tso in tsos:
+            if tso not in tso_dfs:
+                continue
+            col = target + _TSO_COL_SUFFIX[tso]
+            if col in tso_dfs[tso].columns:
+                series_list.append(tso_dfs[tso][col].dropna())
+        if not series_list:
+            continue
+
+        # Outer join and sum — missing TSO-hours contribute 0
+        combined = pd.concat(series_list, axis=1).sum(axis=1, min_count=1)
+
+        # Convert to UTC for consistent date grouping
+        idx = combined.index
+        if hasattr(idx, "tz") and idx.tz is not None:
+            idx = idx.tz_convert("UTC")
+        else:
+            idx = idx.tz_localize("UTC")
+        combined.index = idx
+
+        by_date: dict[str, list] = {}
+        for ts, val in combined.items():
+            if pd.isna(val):
+                continue
+            by_date.setdefault(ts.strftime("%Y-%m-%d"), []).append(round(float(val), 1))
+
+        # Only complete 24h days, last 7
+        days = [
+            {"date": d, "values": vs}
+            for d, vs in sorted(by_date.items())
+            if len(vs) == 24
+        ][-7:]
+
+        if days:
+            result[target] = {"days": days}
+
+    if result:
+        DEPLOY_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        (DEPLOY_DATA_DIR / "gen_load_actuals.json").write_text(json.dumps(result, indent=2))
+        n = sum(len(v["days"]) for v in result.values())
+        logger.info(f"Written gen_load_actuals.json ({n} total target-days)")
+
+
 def write_errors_summary() -> None:
     """Aggregate errors/*.json into errors_summary.json (last 30 days)."""
     if not ERRORS_DIR.exists():
@@ -264,6 +383,102 @@ def write_errors_summary() -> None:
     logger.info(f"Written errors_summary.json ({len(records)} entries)")
 
 
+def write_gen_load_errors() -> None:
+    """Compute daily gen/load MAE vs SMARD actuals; write gen_load_errors_summary.json.
+
+    Requires historical_forecasts/*.parquet to have accumulated across runs (preserved
+    by the CI deploy-state cache).  Silently no-ops if data is insufficient.
+    """
+    from energy_forecasting.config import HISTORICAL_FORECASTS_DIR, PROCESSED_DATA_DIR
+
+    tso_dir = PROCESSED_DATA_DIR / "tso"
+    if not tso_dir.exists():
+        return
+
+    # Load TSO actuals
+    tso_dfs: dict[str, pd.DataFrame] = {}
+    for tso_name in _TSO_COL_SUFFIX:
+        path = tso_dir / f"{tso_name}.parquet"
+        if path.exists():
+            try:
+                tso_dfs[tso_name] = pd.read_parquet(path)
+            except Exception:
+                pass
+
+    if not tso_dfs:
+        return
+
+    result: dict[str, dict] = {}
+    for target, tsos in _TARGET_TSO_FILES.items():
+        # Build national actual series
+        series_list = []
+        for tso in tsos:
+            if tso not in tso_dfs:
+                continue
+            col = target + _TSO_COL_SUFFIX[tso]
+            if col in tso_dfs[tso].columns:
+                series_list.append(tso_dfs[tso][col].dropna())
+        if not series_list:
+            continue
+        actuals = pd.concat(series_list, axis=1).sum(axis=1, min_count=1)
+        idx = actuals.index
+        if hasattr(idx, "tz") and idx.tz is not None:
+            actuals.index = idx.tz_convert("UTC")
+        else:
+            actuals.index = idx.tz_localize("UTC")
+
+        # Load historical forecasts for the national target
+        hf_path = HISTORICAL_FORECASTS_DIR / f"{target}_DE_NATIONAL.parquet"
+        if not hf_path.exists():
+            continue
+        try:
+            hf = pd.read_parquet(hf_path)[["y_pred"]]
+        except Exception:
+            continue
+
+        hf_idx = hf.index
+        if hasattr(hf_idx, "tz") and hf_idx.tz is not None:
+            hf.index = hf_idx.tz_convert("UTC")
+        else:
+            hf.index = hf_idx.tz_localize("UTC")
+
+        # Join forecasts with actuals on UTC timestamps
+        df_both = hf.copy()
+        df_both["y_true"] = actuals.reindex(hf.index)
+        df_both = df_both.dropna()
+        if df_both.empty:
+            continue
+
+        df_both["date"] = [str(ts)[:10] for ts in df_both.index.tz_convert("UTC")]
+        daily = (
+            df_both.groupby("date")
+            .apply(
+                lambda g: pd.Series(
+                    {
+                        "mae": float(np.mean(np.abs(g["y_pred"] - g["y_true"]))),
+                        "n": len(g),
+                    }
+                )
+            )
+            .query("n == 24")
+            .drop(columns="n")
+            .tail(30)
+        )
+        if daily.empty:
+            continue
+        result[target] = {
+            "dates": list(daily.index),
+            "mae": [round(v, 1) for v in daily["mae"]],
+        }
+
+    if result:
+        DEPLOY_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        (DEPLOY_DATA_DIR / "gen_load_errors_summary.json").write_text(
+            json.dumps(result, indent=2)
+        )
+        logger.info(f"Written gen_load_errors_summary.json ({len(result)} targets)")
+
+
 def write_outputs(
     price_df: pd.DataFrame,
     gen_load_results: dict,
@@ -276,6 +491,9 @@ def write_outputs(
     write_gen_load_forecasts(gen_load_results, issued_at=issued_at)
     write_model_metadata(issued_at=issued_at)
     write_actuals()
+    write_gen_load_actuals()
+    compute_errors(price_df)   # must run before write_errors_summary
+    write_gen_load_errors()
     write_errors_summary()
     logger.info("All outputs written to deploy/data/")
 

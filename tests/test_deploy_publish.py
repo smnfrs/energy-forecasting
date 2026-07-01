@@ -207,6 +207,89 @@ def test_write_errors_summary_trims_to_30(tmp_path, monkeypatch):
     assert summary["dates"][0] == "2026-05-06"  # oldest 5 dropped
 
 
+def _tso_parquet(path, tso_suffix, n_complete_days=8):
+    """Write a minimal processed TSO parquet with wind_onshore, solar, load columns."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    base = pd.Timestamp("2026-06-23 00:00", tz="UTC")
+    rows = []
+    for d in range(n_complete_days):
+        for h in range(24):
+            rows.append({
+                "time": base + pd.Timedelta(days=d, hours=h),
+                f"wind_onshore{tso_suffix}": float(d * 100 + h),
+                f"wind_offshore{tso_suffix}": float(d * 50 + h) if tso_suffix in ("_50hz", "_tenn") else None,
+                f"solar{tso_suffix}": float(d * 80 + h),
+                f"load{tso_suffix}": float(d * 200 + h),
+            })
+    df = pd.DataFrame(rows).set_index("time")
+    df.to_parquet(path)
+    return df
+
+
+def test_write_gen_load_forecasts_writes_tso_files(tmp_path, monkeypatch):
+    """Per-TSO JSON files are written alongside national files."""
+    import energy_forecasting.deploy.publish as pub
+
+    monkeypatch.setattr(pub, "GEN_LOAD_DATA_DIR", tmp_path / "gen_load")
+
+    gen_load_results = {
+        ("wind_onshore", "DE_NATIONAL"): _gen_df(),
+        ("wind_onshore", "DE_50HZ"): _gen_df(),
+        ("wind_onshore", "DE_AMPRION"): _gen_df(),
+        ("load", "DE_NATIONAL"): _gen_df(),
+        ("load", "DE_CREOS"): _gen_df(),
+    }
+    pub.write_gen_load_forecasts(gen_load_results, issued_at="2026-06-30T08:00:00Z")
+
+    gl_dir = tmp_path / "gen_load"
+    assert (gl_dir / "wind_onshore_national.json").exists()
+    assert (gl_dir / "wind_onshore_50hz.json").exists()
+    assert (gl_dir / "wind_onshore_amprion.json").exists()
+    assert (gl_dir / "load_national.json").exists()
+    assert (gl_dir / "load_creos.json").exists()
+    # gen_load_diff should not be written
+    assert not list(gl_dir.glob("gen_load_diff*.json"))
+
+
+def test_write_gen_load_actuals_writes_file(tmp_path, monkeypatch):
+    """write_gen_load_actuals produces gen_load_actuals.json from TSO parquets."""
+    import energy_forecasting.deploy.publish as pub
+    import energy_forecasting.config as cfg_mod
+
+    tso_dir = tmp_path / "processed" / "tso"
+    _tso_parquet(tso_dir / "50Hertz.parquet", "_50hz", n_complete_days=8)
+    _tso_parquet(tso_dir / "Amprion.parquet", "_ampr", n_complete_days=8)
+    _tso_parquet(tso_dir / "TenneT.parquet", "_tenn", n_complete_days=8)
+    _tso_parquet(tso_dir / "TransnetBW.parquet", "_tran", n_complete_days=8)
+    _tso_parquet(tso_dir / "Creos.parquet", "_lu", n_complete_days=8)
+
+    monkeypatch.setattr(pub, "DEPLOY_DATA_DIR", tmp_path / "deploy")
+    monkeypatch.setattr(cfg_mod, "PROCESSED_DATA_DIR", tmp_path / "processed")
+
+    pub.write_gen_load_actuals()
+
+    out = tmp_path / "deploy" / "gen_load_actuals.json"
+    assert out.exists()
+    data = json.loads(out.read_text())
+    assert "wind_onshore" in data
+    assert "load" in data
+    days = data["wind_onshore"]["days"]
+    assert len(days) <= 7
+    assert all(len(d["values"]) == 24 for d in days)
+
+
+def test_write_gen_load_actuals_missing_tso_dir(tmp_path, monkeypatch):
+    """write_gen_load_actuals silently skips if tso dir is absent."""
+    import energy_forecasting.deploy.publish as pub
+    import energy_forecasting.config as cfg_mod
+
+    monkeypatch.setattr(pub, "DEPLOY_DATA_DIR", tmp_path / "deploy")
+    monkeypatch.setattr(cfg_mod, "PROCESSED_DATA_DIR", tmp_path / "processed")
+
+    pub.write_gen_load_actuals()  # must not raise
+    assert not (tmp_path / "deploy" / "gen_load_actuals.json").exists()
+
+
 def test_write_outputs_always_calls_errors_summary(tmp_path, monkeypatch):
     """write_outputs rebuilds errors_summary.json unconditionally."""
     import energy_forecasting.deploy.publish as pub

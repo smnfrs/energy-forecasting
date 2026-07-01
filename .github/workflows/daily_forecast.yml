@@ -109,8 +109,26 @@ jobs:
           name: weather-data-${{ github.run_id }}
           path: data/raw/weather/
 
+      - name: Restore deploy state (rolling history + gen/load forecasts)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            deploy/data/
+            data/processed/historical_forecasts/
+          key: deploy-state-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            deploy-state-${{ runner.os }}-
+
       - name: Run inference (skip data update)
         run: conda run -n energy-forecasting energy-forecasting deploy forecast --skip-update
+
+      - name: Save deploy state (rolling history + gen/load forecasts)
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            deploy/data/
+            data/processed/historical_forecasts/
+          key: deploy-state-${{ runner.os }}-${{ github.run_id }}
 
       - name: Upload forecast outputs
         uses: actions/upload-artifact@v4

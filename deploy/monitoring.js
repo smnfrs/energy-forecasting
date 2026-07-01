@@ -1,7 +1,8 @@
 (function () {
   "use strict";
 
-  const DATA = "data/";
+  // When a live API is available, set window.API_DATA_BASE before loading this script.
+  const DATA = (typeof window !== "undefined" && window.API_DATA_BASE) || "data/";
   let currentLang = "en";
   let translations = {};
 
@@ -127,7 +128,47 @@
     }
   }
 
-  // ── §3 Retrain Log ────────────────────────────────────────────────────────
+  // ── §3 Gen/Load Accuracy ──────────────────────────────────────────────────
+
+  const GL_COLORS = {
+    wind_onshore: "#2266CC",
+    wind_offshore: "#44AADD",
+    solar: "#DDAA00",
+    load: "#EE0000",
+  };
+
+  function renderGenLoadErrors(glErrors) {
+    const el = document.getElementById("gen-load-error-chart");
+    if (!el) return;
+    if (!glErrors || !Object.keys(glErrors).length) {
+      noData(el, "no_data"); return;
+    }
+
+    const traces = [];
+    for (const [target, data] of Object.entries(glErrors)) {
+      if (!data.dates || !data.mae) continue;
+      traces.push({
+        x: data.dates,
+        y: data.mae,
+        type: "scatter",
+        mode: "lines+markers",
+        name: t(target),
+        line: { color: GL_COLORS[target] || "#888", width: 2 },
+        marker: { size: 4 },
+      });
+    }
+    if (!traces.length) { noData(el, "no_data"); return; }
+
+    Plotly.newPlot(el, traces, {
+      xaxis: { type: "date", title: "" },
+      yaxis: { title: "MAE (MW)" },
+      legend: { orientation: "h", y: -0.2 },
+      margin: { t: 20, r: 20, b: 60, l: 80 },
+      height: 280,
+    }, { responsive: true, displayModeBar: false });
+  }
+
+  // ── §4 Retrain Log ────────────────────────────────────────────────────────
 
   function renderRetrainLog(history) {
     const el = document.getElementById("retrain-log");
@@ -172,14 +213,16 @@
   async function init() {
     translations = await fetchJSON("translations.json") || {};
 
-    const [summary, metadata, retrainHistory] = await Promise.all([
+    const [summary, metadata, retrainHistory, glErrors] = await Promise.all([
       fetchJSON(DATA + "errors_summary.json"),
       fetchJSON(DATA + "model_metadata.json"),
       fetchJSON(DATA + "retrain_history.json"),
+      fetchJSON(DATA + "gen_load_errors_summary.json"),
     ]);
 
     renderErrorTrend(summary);
     renderCompositionChart(metadata);
+    renderGenLoadErrors(glErrors);
     renderRetrainLog(retrainHistory);
     setupLanguageToggle();
     applyTranslations();

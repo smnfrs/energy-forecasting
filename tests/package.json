@@ -1,0 +1,10 @@
+{
+  "name": "dashboard-smoke-tests",
+  "private": true,
+  "scripts": {
+    "test": "playwright test test_dashboard.js --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.44.0"
+  }
+}

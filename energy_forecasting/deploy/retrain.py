@@ -21,11 +21,15 @@ Usage:
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 import pandas as pd
 from loguru import logger
 
-from energy_forecasting.config import MLFLOW_TRACKING_URI
+from energy_forecasting.config import DEPLOY_DATA_DIR, MLFLOW_TRACKING_URI
+
+RETRAIN_HISTORY_PATH = DEPLOY_DATA_DIR / "retrain_history.json"
+_RETRAIN_HISTORY_MAX = 90
 from energy_forecasting.config.modeling import BLEND_DEGRADATION_THRESHOLD, HOLDOUT_DAYS
 from energy_forecasting.deploy.model_store import (
     ENSEMBLE_CONFIG_PATH,
@@ -35,6 +39,22 @@ from energy_forecasting.deploy.model_store import (
 )
 
 PRICE_RETRAIN_FEATURE_VERSIONS = ["fs_shap_top90", "fs_rfecv_optimum", "fs_shap_top247"]
+
+
+def _append_retrain_history(entry: dict) -> None:
+    """Append one retrain event to deploy/data/retrain_history.json (rolling 90 events)."""
+    DEPLOY_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    if RETRAIN_HISTORY_PATH.exists():
+        try:
+            history: list[dict] = json.loads(RETRAIN_HISTORY_PATH.read_text())
+        except Exception:
+            history = []
+    else:
+        history = []
+    history.append(entry)
+    history = history[-_RETRAIN_HISTORY_MAX:]
+    RETRAIN_HISTORY_PATH.write_text(json.dumps(history, indent=2))
+    logger.info(f"Retrain history updated ({len(history)} events)")
 
 
 def _apply_ema_overlay_for_retrain() -> None:
@@ -147,12 +167,22 @@ def run_price_retrain(
     else:
         needs_reselection = False
 
+    _history_entry = {
+        "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        "old_holdout_mae": round(old_mae, 3),
+        "new_holdout_mae": round(new_mae, 3),
+        "degradation_pct": round((new_mae / old_mae - 1) * 100, 1) if old_mae > 0 else 0.0,
+        "n_models": len(prod_names),
+        "needs_reselection": needs_reselection,
+    }
+
     if needs_reselection and not force:
         logger.warning(
             f"Retrain degraded: new MAE={new_mae:.3f} vs old={old_mae:.3f} "
             f"(ratio={new_mae / old_mae:.2%} > threshold {1 + BLEND_DEGRADATION_THRESHOLD:.0%}). "
             "Not updating config. Pass --force to override."
         )
+        _append_retrain_history(_history_entry)
         return {
             "new_mae": new_mae,
             "old_mae": old_mae,
@@ -166,6 +196,7 @@ def run_price_retrain(
     logger.info(f"ensemble_config.json updated: MAE {old_mae:.3f} → {new_mae:.3f}")
 
     export_price_models(new_config)
+    _append_retrain_history(_history_entry)
 
     return {
         "new_mae": new_mae,

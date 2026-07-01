@@ -1110,3 +1110,59 @@ Steps 4–9 are largely parallelisable once step 1 (data contract) is settled.
 3. **`errors_summary.json` staleness** — fixed by calling `write_errors_summary()` from `write_outputs()` unconditionally (§7.1.4)
 4. **`write_actuals()` filter order** — fixed: filter complete days first, then sort, then trim to 30; DST not an issue for our tz-naive merged.parquet (§7.1.3)
 5. **Browser smoke test** — Playwright script added, locally-run pre-milestone check (§7.10)
+
+---
+
+## 7.14 Implementation Review Commentary (2026-07-01)
+
+Stage 7 is live on GitHub Pages, but the implemented state is closer to a partial Stage 7a than the full Stage 7 milestone in `docs/master_plan.md`. The main remaining problems are listed below for follow-up.
+
+1. **Daily CI does not preserve dashboard history/error state.** `deploy/data/` is gitignored and not tracked, but `publish.py` appends to local existing JSON files (`forecast_history.json`, `errors/*.json`). The GitHub Actions inference job starts from checkout, writes fresh `deploy/data/`, and does not restore previous deployed data before writing outputs. Unless historical deploy data is carried by some external mechanism, the live Pages deployment can lose rolling history on each run.
+
+2. **`errors_summary.json` is stale by construction.** `run_inference()` calls `write_outputs()` first, which rebuilds `errors_summary.json`, and only then calls `compute_errors()`, which may add yesterday's `errors/{date}.json`. The dashboard error trend therefore misses the newly computed error until a later run. Calling `compute_errors()` before `write_errors_summary()`, or regenerating the summary after `compute_errors()`, would close this.
+
+3. **The API-first/static-fallback data client was not implemented.** Both `deploy/script.js` and `deploy/monitoring.js` call plain `fetch(path)` against static files. There is no `window.API_BASE_URL`, endpoint mapping, or fallback helper despite this being in the Stage 7a scope and master-plan goal. The dashboard currently consumes static JSON only.
+
+4. **Per-TSO generation/load support is mostly UI-only.** `script.js` defines TSO toggles and attempts to fetch files such as `wind_onshore_50hz.json`, but `write_gen_load_forecasts()` only writes the four national forecast files. The current `deploy/data/gen_load/` output has no per-TSO files, so the toggles cannot expose the planned TSO-level forecasts.
+
+5. **Monitoring page is far short of the planned Stage 7 page.** It renders ensemble-level price error trend and model composition, but not per-model MAE/RMSE, not gen/load accuracy, and not a populated retrain history. The planned `model_errors.json`, `gen_load_errors_summary.json`, and `retrain_history.json` publishing paths are not implemented.
+
+6. **Gen/load actual overlays are referenced but not produced.** `script.js` tries to fetch `data/gen_load_actuals.json` and has overlay logic, but no publisher writes that file. The master-plan "actuals overlay where available" is therefore only implemented for price actuals, not generation/load.
+
+7. **Retrain history is not durable or published.** `monitoring.js` fetches `retrain_history.json`, but `retrain.py` does not append this file and the daily workflow does not carry it into `deploy/data/`. The monitoring page therefore falls back to "No retrain events recorded yet."
+
+8. **Browser smoke-test gate is not reproducible from the repo alone.** `make test-dashboard` uses `npx playwright`, but there is no `package.json`, no pinned Node dependency setup, and the smoke test is not wired into CI. On the review machine, `npx` was not available. The Python tests for `publish.py` and API passed, but the browser gate could not be run from the checked-out repo.
+
+9. **Status wording is misleading.** `docs/master_plan.md` says "full static site" and lists Stage 7 as complete, while this detailed plan still says Stage 7a implemented with the verification gate pending. The implementation is not yet at the Stage 7 milestone: performance does not track all targets, per-TSO output is absent, and the dashboard is not API-first.
+
+Verification during this review:
+
+- `conda run -n energy-forecasting pytest -q tests/test_deploy_publish.py tests/test_api.py` passed: 16 tests.
+- Plain `pytest` was not on `PATH`; the repo expects the conda environment.
+- `npx playwright --version` failed because `npx` was not installed in the environment.
+
+## 7.15 Resolution of §7.14 Issues (2026-07-01)
+
+All 9 issues from §7.14 were addressed in this session. Summary:
+
+**Issue 1 — CI history preservation:** The `inference` job in `daily_forecast.yml` now uses `actions/cache/restore@v4` to restore `deploy/data/` and `data/processed/historical_forecasts/` at the start, and `actions/cache/save@v4` to persist them at the end. Each run saves under key `deploy-state-${{ runner.os }}-${{ github.run_id }}`; restoration falls back to the most-recent prefix-matched key. After the first successful run the rolling state (forecast history, error files, gen/load forecast history) will accumulate correctly across CI runs.
+
+**Issue 2 — `errors_summary.json` stale by construction:** `compute_errors()` is now called inside `write_outputs()` before `write_errors_summary()`. The separate `compute_errors()` call in `inference.py` has been removed. Today's newly computed error file is therefore included in the summary written in the same run.
+
+**Issue 3 — No API-first/static-fallback switch:** Both `script.js` and `monitoring.js` now read `const DATA = (typeof window !== "undefined" && window.API_DATA_BASE) || "data/";`. A live API server can set `window.API_DATA_BASE` in a page-level script tag before loading the dashboard scripts, with no other JS changes needed.
+
+**Issue 4 — Per-TSO files not written:** `write_gen_load_forecasts()` in `publish.py` now loops over all `(target, region)` keys in `gen_load_results` where `region` is a known per-TSO code, and writes `gen_load/{target}_{suffix}.json` (e.g. `wind_onshore_50hz.json`). The TSO suffix map (`_REGION_SUFFIX`) mirrors the JS `GEN_LOAD_CARDS` config. The per-TSO toggles in each individual gen/load card are now functional.
+
+**Issue 5 — Monitoring page lacking gen/load accuracy:** A new `write_gen_load_errors()` function in `publish.py` reads national historical_forecasts parquets, aligns them against processed TSO actuals, computes daily MAE per target, and writes `gen_load_errors_summary.json`. The monitoring page gains a new §3 card ("Generation & Load Accuracy — Last 30 Days") rendered by `renderGenLoadErrors()` in `monitoring.js`. Data will accumulate after the cache fix allows historical_forecasts to persist across runs. Per-model price errors remain deferred (Stage 8 scope: requires per-run prediction snapshots and a separate comparison pipeline).
+
+**Issue 6 — Gen/load actual overlays not produced:** `write_gen_load_actuals()` was added to `publish.py`. It reads `data/processed/tso/*.parquet`, sums per-target columns across the contributing TSOs (matching `_TARGET_TSO_FILES`), groups into complete 24h days, and writes the last 7 days to `gen_load_actuals.json` in the format expected by `script.js`. Called from `write_outputs()`.
+
+**Issue 7 — Retrain history not durable or published:** `retrain.py` now appends a structured entry (date, old/new MAE, degradation %, n\_models, needs\_reselection) to `deploy/data/retrain_history.json` after every retrain attempt — both successful and degraded. The history file is preserved across runs by the CI cache (fix 1). The monitoring page's Retrain Log will therefore populate on the first retrain that runs after the cache is established.
+
+**Issue 8 — Playwright smoke test not reproducible:** `tests/package.json` was added with `@playwright/test ^1.44.0` as a dev dependency. The `test-dashboard` Makefile target was updated to run `npm install && npx playwright install chromium` before the test. Running `make test-dashboard` is now self-contained on any machine with Node and npm available.
+
+**Issue 9 — Status wording misleading:** `docs/master_plan.md` Stage 7 evaluation status updated to "Stage 7a + 7b complete (2026-07-01), 512 tests pass". `CLAUDE.md` status section updated to reflect the resolved issues.
+
+**Verification (2026-07-01):**
+- `conda run -n energy-forecasting pytest -q` → **512 passed** (up from 509; 3 new tests for `write_gen_load_forecasts` per-TSO, `write_gen_load_actuals`, and missing-TSO-dir guard).
+- `tests/package.json` present; `make test-dashboard` is now reproducible with Node available.
