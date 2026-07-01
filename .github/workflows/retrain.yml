@@ -31,9 +31,35 @@ jobs:
           environment-file: environment.yml
           activate-environment: energy-forecasting
           auto-activate-base: false
+          cache-environment: true
 
-      - name: Download models from Release
-        run: gh release download latest --dir models/ --clobber
+      - name: Install package
+        run: conda run -n energy-forecasting pip install -e .
+
+      - name: Download model artifacts
+        run: |
+          gh release download latest --pattern 'models.tar.gz' --dir /tmp/ --clobber
+          tar -xzf /tmp/models.tar.gz
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore raw-data cache
+        id: cache-raw
+        uses: actions/cache@v4
+        with:
+          path: data/raw/
+          key: raw-data-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            raw-data-${{ runner.os }}-
+
+      - name: Bootstrap raw data from Release (cache miss only)
+        if: steps.cache-raw.outputs.cache-hit != 'true'
+        run: |
+          gh release download latest --pattern 'data-bootstrap.tar.gz' --dir /tmp/ --clobber || true
+          if [ -f /tmp/data-bootstrap.tar.gz ]; then
+            mkdir -p data/
+            tar -xzf /tmp/data-bootstrap.tar.gz -C data/
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -49,13 +75,15 @@ jobs:
           conda run -n energy-forecasting \
             energy-forecasting deploy retrain --price-only $FORCE_FLAG
 
-      - name: Upload new price models to Release
+      - name: Package and upload updated models to Release
         if: success()
         run: |
-          gh release upload latest models/price/*.joblib models/ensemble_config.json \
-            --clobber 2>/dev/null || \
-          gh release create latest models/price/*.joblib models/ensemble_config.json \
-            --title "Production models" --notes "Auto-updated by CI retrain"
+          tar -czf /tmp/models.tar.gz \
+            models/price/ \
+            models/gen_load/ \
+            models/ensemble_config.json \
+            models/gen_load_config.json
+          gh release upload latest /tmp/models.tar.gz --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

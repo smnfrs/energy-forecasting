@@ -18,9 +18,38 @@ jobs:
           environment-file: environment.yml
           activate-environment: energy-forecasting
           auto-activate-base: false
+          cache-environment: true
 
-      - name: Download models from Release
-        run: gh release download latest --dir models/ --clobber || true
+      - name: Install package
+        run: conda run -n energy-forecasting pip install -e .
+
+      - name: Download model artifacts
+        run: |
+          gh release download latest --pattern 'models.tar.gz' --dir /tmp/ --clobber
+          tar -xzf /tmp/models.tar.gz
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore raw-data cache
+        id: cache-raw
+        uses: actions/cache@v4
+        with:
+          path: data/raw/
+          key: raw-data-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            raw-data-${{ runner.os }}-
+
+      - name: Bootstrap raw data from Release (cache miss only)
+        if: steps.cache-raw.outputs.cache-hit != 'true'
+        run: |
+          gh release download latest --pattern 'data-bootstrap.tar.gz' --dir /tmp/ --clobber || true
+          if [ -f /tmp/data-bootstrap.tar.gz ]; then
+            mkdir -p data/
+            tar -xzf /tmp/data-bootstrap.tar.gz -C data/
+            echo "Bootstrapped raw data from Release"
+          else
+            echo "No bootstrap available; update all will run a full download"
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -49,9 +78,15 @@ jobs:
           environment-file: environment.yml
           activate-environment: energy-forecasting
           auto-activate-base: false
+          cache-environment: true
 
-      - name: Download models from Release
-        run: gh release download latest --dir models/ --clobber
+      - name: Install package
+        run: conda run -n energy-forecasting pip install -e .
+
+      - name: Download model artifacts
+        run: |
+          gh release download latest --pattern 'models.tar.gz' --dir /tmp/ --clobber
+          tar -xzf /tmp/models.tar.gz
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -76,8 +111,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pages: write
-      id-token: write
     steps:
       - uses: actions/checkout@v4
 
