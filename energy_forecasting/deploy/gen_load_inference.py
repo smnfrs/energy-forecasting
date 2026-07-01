@@ -401,10 +401,14 @@ def aggregate_national(
         frames = [results[(target, r)] for r in regions if (target, r) in results]
         if not frames:
             continue
-        common_idx = frames[0].index
+        # Union so TSOs with slightly different SMARD data extents don't truncate output
+        all_idx = frames[0].index
         for df in frames[1:]:
-            common_idx = common_idx.intersection(df.index)
-        agg = sum(df.reindex(common_idx) for df in frames)
+            all_idx = all_idx.union(df.index)
+        agg = sum(df.reindex(all_idx, fill_value=0) for df in frames)
+        # Cap to expected forecast window (TSO with more-current data may add 1 extra hour)
+        if len(agg) > DEFAULT_FORECAST_HORIZON:
+            agg = agg.iloc[:DEFAULT_FORECAST_HORIZON]
         national[(target, "DE_NATIONAL")] = agg
         logger.info(
             f"National aggregate {target}: {len(agg)} hours, mean={agg['y_pred'].mean():.1f}"
