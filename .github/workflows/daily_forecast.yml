@@ -27,7 +27,7 @@ jobs:
 
       - name: Download model artifacts
         run: |
-          gh release download latest --repo $REPO --pattern 'models.tar.gz' --dir /tmp/ --clobber
+          gh release download --repo $REPO --pattern 'models.tar.gz' --dir /tmp/ --clobber
           tar -xzf /tmp/models.tar.gz
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -44,7 +44,7 @@ jobs:
       - name: Bootstrap raw data from Release (cache miss only)
         if: steps.cache-raw.outputs.cache-hit != 'true'
         run: |
-          gh release download latest --repo $REPO --pattern 'data-bootstrap.tar.gz' --dir /tmp/ --clobber || true
+          gh release download --repo $REPO --pattern 'data-bootstrap.tar.gz' --dir /tmp/ --clobber || true
           if [ -f /tmp/data-bootstrap.tar.gz ]; then
             mkdir -p data/
             tar -xzf /tmp/data-bootstrap.tar.gz -C data/
@@ -86,7 +86,7 @@ jobs:
 
       - name: Download model artifacts
         run: |
-          gh release download latest --repo $REPO --pattern 'models.tar.gz' --dir /tmp/ --clobber
+          gh release download --repo $REPO --pattern 'models.tar.gz' --dir /tmp/ --clobber
           tar -xzf /tmp/models.tar.gz
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
