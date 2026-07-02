@@ -14,8 +14,8 @@ a:hover { text-decoration: underline; }
 /* ── Header ───────────────────────────────────────────────────────────────── */
 header {
   background: #fff;
-  border-bottom: 1px solid #dee2e6;
-  padding: 1rem 1.5rem 0.75rem;
+  border-bottom: none;
+  padding: 1rem 1.5rem 0;
   position: sticky;
   top: 0;
   z-index: 100;
@@ -80,15 +80,47 @@ h1 {
 }
 .lang-btn:hover { background: #dee2e6; }
 
+/* ── Tab bar ──────────────────────────────────────────────────────────────── */
+.tab-bar {
+  display: flex;
+  gap: 0;
+  margin-top: 0.6rem;
+  border-bottom: 2px solid #e9ecef;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tab-bar::-webkit-scrollbar { display: none; }
+
+.tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  padding: 0.55rem 1.4rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #6c757d;
+  white-space: nowrap;
+  margin-bottom: -2px;
+  transition: color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+.tab-btn:hover { color: #343a40; }
+.tab-btn.active { color: #3B82F6; border-bottom-color: #3B82F6; font-weight: 600; }
+
 /* ── Main layout ──────────────────────────────────────────────────────────── */
 main {
   max-width: 1200px;
-  margin: 1.5rem auto;
-  padding: 0 1.25rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem;
+}
+
+.tab-pane {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
 }
+.tab-pane[hidden] { display: none !important; }
 
 /* ── Cards ────────────────────────────────────────────────────────────────── */
 .card {

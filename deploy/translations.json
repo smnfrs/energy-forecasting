@@ -44,7 +44,11 @@
     "last_retrain": "Last retrain",
     "mae_change": "MAE change",
     "back_to_forecast": "Back to Forecast",
-    "gen_load_errors_title": "Generation & Load Accuracy (Last 30 Days)"
+    "gen_load_errors_title": "Generation & Load Accuracy (Last 30 Days)",
+    "tab_prices": "Prices",
+    "tab_gen_load": "Gen & Load",
+    "tab_monitoring": "Monitoring",
+    "other_gen": "Other Generation"
   },
   "de": {
     "title": "DE-LU Energieprognose",
@@ -91,6 +95,10 @@
     "last_retrain": "Letztes Retraining",
     "mae_change": "MAE-Änderung",
     "back_to_forecast": "Zurück zur Prognose",
-    "gen_load_errors_title": "Erzeugung & Last — Prognosegenauigkeit (letzte 30 Tage)"
+    "gen_load_errors_title": "Erzeugung & Last — Prognosegenauigkeit (letzte 30 Tage)",
+    "tab_prices": "Preise",
+    "tab_gen_load": "Erzeugung & Last",
+    "tab_monitoring": "Monitoring",
+    "other_gen": "Sonstige Erzeugung"
   }
 }

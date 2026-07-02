@@ -247,8 +247,28 @@ def test_write_gen_load_forecasts_writes_tso_files(tmp_path, monkeypatch):
     assert (gl_dir / "wind_onshore_amprion.json").exists()
     assert (gl_dir / "load_national.json").exists()
     assert (gl_dir / "load_creos.json").exists()
-    # gen_load_diff should not be written
+    # gen_load_diff should not be written when key is absent
     assert not list(gl_dir.glob("gen_load_diff*.json"))
+
+
+def test_write_gen_load_forecasts_writes_gen_load_diff(tmp_path, monkeypatch):
+    """gen_load_diff_national.json is written when the key is present."""
+    import energy_forecasting.deploy.publish as pub
+
+    monkeypatch.setattr(pub, "GEN_LOAD_DATA_DIR", tmp_path / "gen_load")
+
+    gen_load_results = {
+        ("wind_onshore", "DE_NATIONAL"): _gen_df(),
+        ("gen_load_diff", "DE_NATIONAL"): _gen_df(),
+    }
+    pub.write_gen_load_forecasts(gen_load_results, issued_at="2026-06-30T08:00:00Z")
+
+    out = tmp_path / "gen_load" / "gen_load_diff_national.json"
+    assert out.exists()
+    data = json.loads(out.read_text())
+    assert data["target"] == "gen_load_diff"
+    assert data["region"] == "DE_NATIONAL"
+    assert len(data["forecasts"]) == 168
 
 
 def test_write_gen_load_actuals_writes_file(tmp_path, monkeypatch):

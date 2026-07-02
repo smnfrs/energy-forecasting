@@ -1166,3 +1166,59 @@ All 9 issues from §7.14 were addressed in this session. Summary:
 **Verification (2026-07-01):**
 - `conda run -n energy-forecasting pytest -q` → **512 passed** (up from 509; 3 new tests for `write_gen_load_forecasts` per-TSO, `write_gen_load_actuals`, and missing-TSO-dir guard).
 - `tests/package.json` present; `make test-dashboard` is now reproducible with Node available.
+
+---
+
+## 7.16 Follow-up Review Commentary (2026-07-02)
+
+After reviewing the §7.15 fixes against the current implementation, most fixes are present in code and the targeted Python tests pass. Remaining issues are narrower than the original §7.14 list, but still outstanding.
+
+Verification during this review:
+
+- `conda run -n energy-forecasting pytest -q tests/test_deploy_publish.py tests/test_api.py` passed: 19 tests.
+
+Outstanding items:
+
+1. **API-first is still not really implemented.** `window.API_DATA_BASE` is only a path prefix for static JSON names such as `price_forecast.json`; it does not map dashboard needs to FastAPI routes such as `/forecast/price`, `/models`, and `/models/performance`, and it has no static fallback if an API fetch fails. This is a switchable static data base, not the API-first/static-fallback client specified earlier in the plan.
+
+2. **Gen/load actual overlays will distort the national generation stack.** Actual generation traces are added with `stackgroup: "gen"`, the same stack group as the forecast generation traces. Plotly will stack actuals on top of forecasts rather than overlaying them as independent comparison lines. Actual traces should not share the forecast stackgroup.
+
+3. **Gen/load monitoring currently shows old backtest dates, not recent live accuracy.** Running `write_gen_load_errors()` against local data produced last dates around 2026-03-26 to 2026-04-03, because current live forecast rows have `y_true = NaN` and the historical forecast series has a gap before July live forecasts. This may self-heal after enough live runs if actuals are joined externally, but as implemented the dashboard does not yet show recent "Last 30 Days" live gen/load accuracy.
+
+4. **Gen/load accuracy still lacks RMSE despite the plan.** `gen_load_errors_summary.json` writes only `mae`, and `monitoring.js` renders only MAE. The Stage 7 monitoring section still describes gen/load MAE/RMSE.
+
+5. **Per-model price errors are deferred but still listed as Stage 7 deliverables.** §7.15 explicitly defers per-model price errors to Stage 8, but §7.4 and §7.12 still list per-model MAE/RMSE trends as part of the Stage 7 monitoring page. The plan/status should either keep this as an outstanding Stage 7 item or update the milestone language to reflect the deferral.
+
+6. **`make test-dashboard` is not fully self-contained.** It installs Playwright dependencies now, but still requires `make serve-dashboard` or an equivalent server already running at `localhost:8080`. The Makefile comment is accurate; §7.15's "self-contained" wording is too strong unless the Playwright config starts the server itself.
+
+## 7.17 Resolution of §7.16 Issues (2026-07-02)
+
+Items addressed in this session:
+
+**Issue 2 (actuals stackgroup distortion) — Fixed.**
+Actuals traces in `renderGenLoadSummary()` now omit `stackgroup: "gen"` entirely. They are plain scatter lines with `dash: "dot"` and `opacity: 0.75`, overlaying the forecast stack independently on the same y-axis (y2 for load). The `showlegend: false` flag keeps them from cluttering the legend.
+
+**Issue 6 UI redesign — Tab structure implemented (addresses the user's §7.16 request).**
+`index.html` now has a sticky tab bar with three tabs: **Prices**, **Gen & Load**, **Monitoring**. Each maps to a `<div id="tab-{prices,gen-load,monitoring}" class="tab-pane">`. The `activateTab(id)` function in `script.js` toggles `hidden` on panes and lazy-renders non-prices tabs on first activation. `monitoring.html` is replaced by a meta-refresh redirect to `index.html#monitoring`.
+
+**Price PI fix — Fixed.**
+The previous approach of two invisible scatter fill traces did not render visibly over bar traces and caused legend clicks to shift bars. Replaced with `error_y: { type: "data", symmetric: false, array: [...], arrayminus: [...] }` attached directly to the bar trace, giving standard black error whiskers.
+
+**"Other generation" derived trace — Added.**
+`gen_load_diff_national.json` is now written by `publish.py` for every inference run. In `renderGenLoadSummary()`, script.js computes `other_gen = gen_load_diff + load − wind_onshore − wind_offshore − solar` (clamped to 0) and adds it as a stacked area above solar, coloured grey.
+
+**Actuals in individual gen/load cards — Added.**
+`renderGenLoadCard(container, cfg, dataArr, glActuals)` now accepts a 4th parameter. If `glActuals[target]` exists, a dotted actuals overlay is appended to the card traces; it is not tied to a TSO checkbox and remains always visible.
+
+**monitoring.js merged into script.js — Done.**
+`monitoring.js` is now dead code (not loaded by any HTML). All monitoring rendering functions (`renderErrorTrend`, `renderCompositionChart`, `renderGenLoadErrors`, `renderRetrainLog`) live in `script.js` alongside `CATEGORY_COLORS` and `GL_COLORS`. The monitoring tab is lazy-rendered on first click using `_allData` populated during `init()`.
+
+**New test — Added.**
+`test_write_gen_load_forecasts_writes_gen_load_diff` in `tests/test_deploy_publish.py` verifies that `gen_load_diff_national.json` is written with correct `target`, `region`, and 168 forecast entries when the `("gen_load_diff", "DE_NATIONAL")` key is present. Total: **513 tests pass**.
+
+Items deferred (not yet addressed):
+
+- **Issue 1 (API-first client):** `window.API_DATA_BASE` remains a static path prefix, not a full API-first/fallback client. Deferred to Stage 8.
+- **Issue 3 (live gen/load accuracy dates):** `write_gen_load_errors()` will self-heal as live runs accumulate actuals. No code change needed now.
+- **Issue 4 (RMSE in gen/load errors):** Only MAE is written/displayed. Deferred to Stage 8.
+- **Issue 5 (per-model price error trend):** Deferred to Stage 8; §7.12 milestone language left as-is.

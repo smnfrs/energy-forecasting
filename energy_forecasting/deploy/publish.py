@@ -209,7 +209,23 @@ def write_gen_load_forecasts(
         out.write_text(json.dumps(payload, indent=2))
         logger.debug(f"Written {out}")
 
-    logger.info("Gen/load forecast JSONs written (national + per-TSO)")
+    # gen_load_diff national — used by dashboard to derive "other generation"
+    key_gld = ("gen_load_diff", "DE_NATIONAL")
+    if key_gld in gen_load_results:
+        df = gen_load_results[key_gld]
+        payload = {
+            "target": "gen_load_diff",
+            "region": "DE_NATIONAL",
+            "issued_at": issued_at,
+            "horizon_hours": len(df),
+            "unit": "MW",
+            "forecasts": _hourly_entries(df),
+        }
+        out = GEN_LOAD_DATA_DIR / "gen_load_diff_national.json"
+        out.write_text(json.dumps(payload, indent=2))
+        logger.debug(f"Written {out}")
+
+    logger.info("Gen/load forecast JSONs written (national + per-TSO + gen_load_diff)")
 
 
 def write_model_metadata(issued_at: str | None = None) -> None:

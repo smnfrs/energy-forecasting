@@ -16,7 +16,6 @@
       <p class="subtitle" data-i18n="subtitle">Day-Ahead Electricity Price &amp; Generation/Load Prediction</p>
     </div>
     <div class="header-actions">
-      <a href="monitoring.html" class="nav-link" data-i18n="monitoring_link">Model Monitoring</a>
       <button id="lang-toggle" class="lang-btn">DE</button>
     </div>
   </div>
@@ -24,6 +23,11 @@
     <span data-i18n="last_updated">Last updated</span>:
     <span id="last-updated-value">—</span>
   </p>
+  <nav class="tab-bar" role="tablist">
+    <button class="tab-btn active" data-tab="prices"     role="tab" data-i18n="tab_prices">Prices</button>
+    <button class="tab-btn"        data-tab="gen-load"   role="tab" data-i18n="tab_gen_load">Gen &amp; Load</button>
+    <button class="tab-btn"        data-tab="monitoring" role="tab" data-i18n="tab_monitoring">Monitoring</button>
+  </nav>
 </header>
 
 <main>
@@ -32,68 +36,91 @@
     <span data-i18n="reselection_warning">Model degradation detected. Manual reselection recommended.</span>
   </div>
 
-  <!-- §1 Price Forecast -->
-  <section class="card">
-    <h2 data-i18n="forecast_chart_title">24-Hour Price Forecast</h2>
-    <p class="chart-label">
-      <span data-i18n="forecast_date">Delivery</span>: <span id="delivery-date">—</span>
-    </p>
-    <div id="forecast-chart"></div>
-  </section>
+  <!-- ── Tab: Prices ───────────────────────────────────────────────────────── -->
+  <div id="tab-prices" class="tab-pane">
 
-  <!-- §2 Gen/Load National Overview -->
-  <section class="card">
-    <h2 data-i18n="gen_load_summary_title">Generation Mix &amp; Load — National (7 Days)</h2>
-    <div id="summary-chart"></div>
-  </section>
+    <section class="card">
+      <h2 data-i18n="forecast_chart_title">24-Hour Price Forecast</h2>
+      <p class="chart-label">
+        <span data-i18n="forecast_date">Delivery</span>: <span id="delivery-date">—</span>
+      </p>
+      <div id="forecast-chart"></div>
+    </section>
 
-  <!-- §3–6 Individual Gen/Load Cards -->
-  <section>
-    <h2 data-i18n="gen_load_section">Individual Generation &amp; Load Forecasts</h2>
-    <div class="forecast-cards-grid">
+    <section class="card">
+      <h2 data-i18n="history_chart_title">Forecast vs Actual — Price (30 Days)</h2>
+      <div id="history-chart"></div>
+    </section>
 
-      <details class="forecast-card" id="card-wind-onshore">
-        <summary data-i18n="forecast_detail_wind_onshore">Wind Onshore — 7-Day National Forecast</summary>
-        <div class="chart-body">
-          <div class="chart-container"></div>
-        </div>
-      </details>
+    <section class="card">
+      <h2 data-i18n="error_chart_title">Daily Forecast Error — Price (Last 7 Days)</h2>
+      <div id="error-chart"></div>
+    </section>
 
-      <details class="forecast-card" id="card-wind-offshore">
-        <summary data-i18n="forecast_detail_wind_offshore">Wind Offshore — 7-Day National Forecast</summary>
-        <div class="chart-body">
-          <div class="chart-container"></div>
-        </div>
-      </details>
+  </div>
 
-      <details class="forecast-card" id="card-solar">
-        <summary data-i18n="forecast_detail_solar">Solar — 7-Day National Forecast</summary>
-        <div class="chart-body">
-          <div class="chart-container"></div>
-        </div>
-      </details>
+  <!-- ── Tab: Gen & Load ───────────────────────────────────────────────────── -->
+  <div id="tab-gen-load" class="tab-pane" hidden>
 
-      <details class="forecast-card" id="card-load">
-        <summary data-i18n="forecast_detail_load">Load — 7-Day National Forecast</summary>
-        <div class="chart-body">
-          <div class="chart-container"></div>
-        </div>
-      </details>
+    <section class="card">
+      <h2 data-i18n="gen_load_summary_title">Generation Mix &amp; Load — National (7 Days)</h2>
+      <div id="summary-chart"></div>
+    </section>
 
-    </div>
-  </section>
+    <section>
+      <h2 data-i18n="gen_load_section">Individual Generation &amp; Load Forecasts</h2>
+      <div class="forecast-cards-grid">
 
-  <!-- §7 Forecast vs Actual -->
-  <section class="card">
-    <h2 data-i18n="history_chart_title">Forecast vs Actual — Price (30 Days)</h2>
-    <div id="history-chart"></div>
-  </section>
+        <details class="forecast-card" id="card-wind-onshore">
+          <summary data-i18n="forecast_detail_wind_onshore">Wind Onshore — 7-Day National Forecast</summary>
+          <div class="chart-body"><div class="chart-container"></div></div>
+        </details>
 
-  <!-- §8 Daily Error -->
-  <section class="card">
-    <h2 data-i18n="error_chart_title">Daily Forecast Error — Price (Last 7 Days)</h2>
-    <div id="error-chart"></div>
-  </section>
+        <details class="forecast-card" id="card-wind-offshore">
+          <summary data-i18n="forecast_detail_wind_offshore">Wind Offshore — 7-Day National Forecast</summary>
+          <div class="chart-body"><div class="chart-container"></div></div>
+        </details>
+
+        <details class="forecast-card" id="card-solar">
+          <summary data-i18n="forecast_detail_solar">Solar — 7-Day National Forecast</summary>
+          <div class="chart-body"><div class="chart-container"></div></div>
+        </details>
+
+        <details class="forecast-card" id="card-load">
+          <summary data-i18n="forecast_detail_load">Load — 7-Day National Forecast</summary>
+          <div class="chart-body"><div class="chart-container"></div></div>
+        </details>
+
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ── Tab: Monitoring ───────────────────────────────────────────────────── -->
+  <div id="tab-monitoring" class="tab-pane" hidden>
+
+    <section class="card">
+      <h2 data-i18n="model_mae_title">Price Error Trend (30 Days)</h2>
+      <div id="error-trend-chart"></div>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="composition_title">Ensemble Composition</h2>
+      <div id="composition-chart"></div>
+      <div id="info-panel" class="info-panel"></div>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="gen_load_errors_title">Generation &amp; Load Accuracy (Last 30 Days)</h2>
+      <div id="gen-load-error-chart"></div>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="retrain_log_title">Retrain Log</h2>
+      <div id="retrain-log"></div>
+    </section>
+
+  </div>
 
 </main>
 
