@@ -242,7 +242,10 @@ def _build_exog_features(
                 tso_name = REGION_TO_TSO[upstream_region]
                 suffix = TSO_SUFFIXES[tso_name]
                 col_name = f"{upstream_target}{suffix}"
-            cols[col_name] = upstream_df["y_pred"].reindex(forecast_idx)
+            # ffill: upstream wave may end 1h early if its TSO data lagged behind;
+            # carrying the last value forward avoids a trailing NaN that would
+            # otherwise cause dropna() to strip the final forecast hour.
+            cols[col_name] = upstream_df["y_pred"].reindex(forecast_idx).ffill()
 
     if not cols:
         return None
