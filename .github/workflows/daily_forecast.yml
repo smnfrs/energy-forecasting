@@ -2,7 +2,7 @@ name: Daily Forecast
 
 on:
   schedule:
-    # 08:00 UTC = 09:00 CET / 10:00 CEST — after D+1 SMARD generation forecasts
+    # 08:00 UTC = 09:00 CET / 10:00 CEST — after D+1 SMARD generation forecasts publish
     - cron: "0 8 * * *"
   workflow_dispatch:
 
