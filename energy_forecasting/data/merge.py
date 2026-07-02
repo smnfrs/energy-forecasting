@@ -728,6 +728,17 @@ def run_merge_pipeline(
     logger.info("Normalizing DST -> Europe/Berlin")
     df = normalize_dst(df)
 
+    # 11b. Drop trailing rows without price data (future generation-forecast rows
+    # published by SMARD before D+1 prices are released at ~noon CET).
+    last_price_idx = df["target_price"].last_valid_index()
+    if last_price_idx is not None and df.index[-1] > last_price_idx:
+        n_dropped = int((df.index > last_price_idx).sum())
+        logger.info(
+            f"Dropped {n_dropped} trailing rows with no target_price "
+            f"(future data, last price: {last_price_idx})"
+        )
+        df = df.loc[:last_price_idx]
+
     # 12. NaN validation gate
     validate_no_nans(df, allow_initial_target_gap=True)
 
