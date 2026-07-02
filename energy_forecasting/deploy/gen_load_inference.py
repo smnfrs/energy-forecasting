@@ -22,6 +22,7 @@ from loguru import logger
 
 from energy_forecasting.config import (
     HISTORICAL_FORECASTS_DIR,
+    PROCESSED_DATA_DIR,
     RAW_DATA_DIR,
 )
 from energy_forecasting.config.locations import locations_for_tso
@@ -242,10 +243,7 @@ def _build_exog_features(
                 tso_name = REGION_TO_TSO[upstream_region]
                 suffix = TSO_SUFFIXES[tso_name]
                 col_name = f"{upstream_target}{suffix}"
-            # ffill: upstream wave may end 1h early if its TSO data lagged behind;
-            # carrying the last value forward avoids a trailing NaN that would
-            # otherwise cause dropna() to strip the final forecast hour.
-            cols[col_name] = upstream_df["y_pred"].reindex(forecast_idx).ffill()
+            cols[col_name] = upstream_df["y_pred"].reindex(forecast_idx)
 
     if not cols:
         return None
@@ -257,6 +255,7 @@ def _infer_one(
     region: str,
     config_entry: dict,
     exog_forecasts: dict[tuple[str, str], pd.DataFrame] | None,
+    forecast_idx: pd.DatetimeIndex,
 ) -> pd.DataFrame:
     """Run 168h inference for a single (target, region) combo.
 
@@ -270,7 +269,7 @@ def _infer_one(
     # Load model
     model = load_gen_load_model(target, region)
 
-    # Load forecast weather and determine forecast window
+    # Load forecast weather
     df_weather_fc = _load_forecast_weather(target, region)
 
     # Load TSO actuals for lag seeding
@@ -279,16 +278,6 @@ def _infer_one(
     if target_col not in tso_df.columns and target != "gen_load_diff":
         raise KeyError(f"Target column '{target_col}' missing from TSO data for {region}")
     y_actual = tso_df[target_col] if target_col in tso_df.columns else tso_df.iloc[:, 0]
-
-    # Forecast timestamps: from last TSO actual + 1h, for 168h
-    last_ts = tso_df.index[-1]
-    tz = last_ts.tzinfo
-    forecast_idx = pd.date_range(
-        start=last_ts + pd.Timedelta(hours=1),
-        periods=DEFAULT_FORECAST_HORIZON,
-        freq="h",
-        tz=tz,
-    )
 
     # Weather FE
     fe_class = _TARGET_FE_CLASS[target]
@@ -368,10 +357,43 @@ def _try_get_conformal_quantile(run_id: str) -> float | None:
         return None
 
 
+def _compute_shared_forecast_idx() -> pd.DatetimeIndex:
+    """Compute a single 168h forecast window anchored to the oldest TSO endpoint.
+
+    Different TSO parquets end at different hours because SMARD publishes
+    realized generation with varying lags per operator. Using the minimum
+    last_ts ensures every (target, region) model shares the same DatetimeIndex,
+    so wave-1 exog features align exactly with wave-2 forecast_idx — no NaN
+    gap, no need for any fill heuristic.
+    """
+    min_last_ts: pd.Timestamp | None = None
+    for tso_name in TSO_REGIONS:
+        path = PROCESSED_DATA_DIR / "tso" / f"{tso_name}.parquet"
+        if not path.exists():
+            continue
+        idx = pd.read_parquet(path, columns=[]).index
+        last_ts = idx[-1]
+        if min_last_ts is None or last_ts < min_last_ts:
+            min_last_ts = last_ts
+
+    if min_last_ts is None:
+        raise FileNotFoundError("No TSO parquets found under data/processed/tso/")
+
+    tz = min_last_ts.tzinfo
+    logger.info(f"Shared forecast_idx anchored to min TSO last_ts: {min_last_ts}")
+    return pd.date_range(
+        start=min_last_ts + pd.Timedelta(hours=1),
+        periods=DEFAULT_FORECAST_HORIZON,
+        freq="h",
+        tz=tz,
+    )
+
+
 def _run_target_wave(
     targets: list[str],
     gl_config: dict,
     exog_forecasts: dict[tuple[str, str], pd.DataFrame] | None,
+    forecast_idx: pd.DatetimeIndex,
 ) -> dict[tuple[str, str], pd.DataFrame]:
     """Run inference for all (target, region) combos in a wave."""
     results: dict[tuple[str, str], pd.DataFrame] = {}
@@ -382,7 +404,10 @@ def _run_target_wave(
                 logger.warning(f"No config entry for {combo_key}, skipping")
                 continue
             try:
-                df = _infer_one(target, region, gl_config["combos"][combo_key], exog_forecasts)
+                df = _infer_one(
+                    target, region, gl_config["combos"][combo_key],
+                    exog_forecasts, forecast_idx,
+                )
                 results[(target, region)] = df
             except Exception:
                 logger.exception(f"FAILED: inference for {combo_key}")
@@ -462,24 +487,28 @@ def run_gen_load_inference(
     gl_config = load_gen_load_config()
     logger.info(f"Loaded gen_load_config.json: {len(gl_config['combos'])} combos")
 
+    # Single forecast window for all (target, region) pairs — prevents exog
+    # misalignment when TSO parquets end at different hours due to SMARD lag.
+    forecast_idx = _compute_shared_forecast_idx()
+
     all_results: dict[tuple[str, str], pd.DataFrame] = {}
 
     # Wave 1: wind + solar (independent, no exog)
     wave1_targets = GEN_LOAD_TRAINING_ORDER[0]
     logger.info(f"Wave 1: {wave1_targets}")
-    wave1 = _run_target_wave(wave1_targets, gl_config, exog_forecasts=None)
+    wave1 = _run_target_wave(wave1_targets, gl_config, exog_forecasts=None, forecast_idx=forecast_idx)
     all_results.update(wave1)
 
     # Wave 2: load (needs wind/solar)
     wave2_targets = GEN_LOAD_TRAINING_ORDER[1]
     logger.info(f"Wave 2: {wave2_targets}")
-    wave2 = _run_target_wave(wave2_targets, gl_config, exog_forecasts=all_results)
+    wave2 = _run_target_wave(wave2_targets, gl_config, exog_forecasts=all_results, forecast_idx=forecast_idx)
     all_results.update(wave2)
 
     # Wave 3: gen_load_diff (needs all above)
     wave3_targets = GEN_LOAD_TRAINING_ORDER[2]
     logger.info(f"Wave 3: {wave3_targets}")
-    wave3 = _run_target_wave(wave3_targets, gl_config, exog_forecasts=all_results)
+    wave3 = _run_target_wave(wave3_targets, gl_config, exog_forecasts=all_results, forecast_idx=forecast_idx)
     all_results.update(wave3)
 
     # National aggregates
