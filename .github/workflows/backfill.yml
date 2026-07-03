@@ -1,0 +1,131 @@
+name: Backfill Forecasts
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_inference:
+        description: "Only recompute errors from existing history (faster). Set to 'true' to skip re-running inference."
+        required: false
+        default: "false"
+
+env:
+  REPO: smnfrs/energy-forecasting
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up conda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          environment-file: environment.yml
+          activate-environment: energy-forecasting
+          auto-activate-base: false
+
+      - name: Install package
+        run: conda run -n energy-forecasting pip install -e .
+
+      - name: Download model artifacts
+        run: |
+          gh release download v1.0.0 --repo $REPO --pattern 'models.tar.gz' --dir /tmp/ --clobber
+          tar -xzf /tmp/models.tar.gz
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore raw-data cache
+        id: cache-raw
+        uses: actions/cache@v4
+        with:
+          path: data/raw/
+          key: raw-data-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            raw-data-${{ runner.os }}-
+
+      - name: Bootstrap raw data from Release (cache miss only)
+        if: steps.cache-raw.outputs.cache-hit != 'true'
+        run: |
+          gh release download v1.0.0 --repo $REPO --pattern 'data-bootstrap.tar.gz' --dir /tmp/ --clobber || true
+          if [ -f /tmp/data-bootstrap.tar.gz ]; then
+            tar -xzf /tmp/data-bootstrap.tar.gz
+            echo "Bootstrapped raw data from Release"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update data (SMARD + weather + commodities)
+        if: inputs.skip_inference != 'true'
+        run: conda run -n energy-forecasting energy-forecasting update all
+
+      - name: Merge and process
+        if: inputs.skip_inference != 'true'
+        run: conda run -n energy-forecasting energy-forecasting process
+
+      - name: Restore deploy state
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            deploy/data/
+            data/processed/historical_forecasts/
+          key: deploy-state-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            deploy-state-${{ runner.os }}-
+
+      - name: Restore forecast history from Release
+        run: |
+          mkdir -p deploy/data
+          gh release download v1.0.0 --repo $REPO --pattern 'forecast_history.json' \
+            --dir deploy/data/ --clobber 2>/dev/null \
+            && echo "Restored forecast_history.json from Release" \
+            || echo "No forecast_history.json in Release yet"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run inference (re-generates today's forecast + backfills errors)
+        if: inputs.skip_inference != 'true'
+        run: conda run -n energy-forecasting energy-forecasting deploy forecast --skip-update
+
+      - name: Backfill errors only (skip re-running inference)
+        if: inputs.skip_inference == 'true'
+        run: |
+          conda run -n energy-forecasting python3 - <<'EOF'
+          from energy_forecasting.deploy.publish import backfill_errors, write_errors_summary
+          backfill_errors()
+          write_errors_summary()
+          print("Backfill complete")
+          EOF
+
+      - name: Persist forecast history to Release
+        if: always()
+        run: |
+          if [ -f deploy/data/forecast_history.json ]; then
+            gh release upload v1.0.0 --repo $REPO deploy/data/forecast_history.json --clobber
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload forecast outputs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backfill-outputs-${{ github.run_id }}
+          path: deploy/data/
+          retention-days: 7
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./deploy
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4

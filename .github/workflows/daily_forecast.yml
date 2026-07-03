@@ -119,8 +119,29 @@ jobs:
           restore-keys: |
             deploy-state-${{ runner.os }}-
 
+      - name: Restore forecast history from Release (cache-miss safety net)
+        run: |
+          mkdir -p deploy/data
+          gh release download v1.0.0 --repo $REPO --pattern 'forecast_history.json' \
+            --dir deploy/data/ --clobber 2>/dev/null \
+            && echo "Restored forecast_history.json from Release" \
+            || echo "No forecast_history.json in Release yet, starting fresh"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Run inference (skip data update)
         run: conda run -n energy-forecasting energy-forecasting deploy forecast --skip-update
+
+      - name: Persist forecast history to Release
+        if: always()
+        run: |
+          if [ -f deploy/data/forecast_history.json ]; then
+            gh release upload v1.0.0 --repo $REPO deploy/data/forecast_history.json --clobber \
+              && echo "Persisted forecast_history.json to Release" \
+              || echo "Warning: could not persist forecast_history.json to Release"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Save deploy state (rolling history + gen/load forecasts)
         uses: actions/cache/save@v4

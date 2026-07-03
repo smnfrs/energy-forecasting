@@ -307,7 +307,11 @@ def write_actuals() -> None:
 
 
 def write_gen_load_actuals() -> None:
-    """Write rolling 7-day actual gen/load to gen_load_actuals.json."""
+    """Write rolling 7-day actual gen/load to gen_load_actuals.json.
+
+    Includes the last 7 complete 24h days PLUS today's partial data if available,
+    so the actuals overlay connects to the start of the forecast on the dashboard.
+    """
     from energy_forecasting.config import PROCESSED_DATA_DIR
 
     tso_dir = PROCESSED_DATA_DIR / "tso"
@@ -356,15 +360,22 @@ def write_gen_load_actuals() -> None:
                 continue
             by_date.setdefault(ts.strftime("%Y-%m-%d"), []).append(round(float(val), 1))
 
-        # Only complete 24h days, last 7
-        days = [
+        sorted_dates = sorted(by_date.items())
+        # Last 7 complete days + today's partial data so the overlay
+        # connects to the start of the 168h gen/load forecast.
+        complete = [
             {"date": d, "values": vs}
-            for d, vs in sorted(by_date.items())
+            for d, vs in sorted_dates
             if len(vs) == 24
         ][-7:]
+        # Append today's partial data if not already included as a complete day
+        if sorted_dates:
+            last_date, last_vals = sorted_dates[-1]
+            if last_vals and len(last_vals) < 24 and (not complete or complete[-1]["date"] != last_date):
+                complete.append({"date": last_date, "values": last_vals})
 
-        if days:
-            result[target] = {"days": days}
+        if complete:
+            result[target] = {"days": complete}
 
     if result:
         DEPLOY_DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -508,59 +519,59 @@ def write_outputs(
     write_model_metadata(issued_at=issued_at)
     write_actuals()
     write_gen_load_actuals()
-    compute_errors(price_df)   # must run before write_errors_summary
+    backfill_errors()
     write_gen_load_errors()
     write_errors_summary()
     logger.info("All outputs written to deploy/data/")
 
 
-def compute_errors(price_df: pd.DataFrame) -> None:
-    """Compute forecast errors for yesterday and write to errors/{date}.json.
+def backfill_errors() -> None:
+    """Compute MAE/RMSE for every forecast in history where actuals are available.
 
-    Compares yesterday's price forecast (from history) against SMARD actuals.
-    Silently skips if actuals or yesterday's forecast are not available yet.
+    Scans forecast_history.json, matches each entry to its delivery date (first
+    forecast timestamp date), and writes errors/{delivery_date}.json if missing.
+    This replaces the old single-day compute_errors approach and correctly handles
+    the case where the pipeline runs after noon (D+2 forecast) as well as the
+    standard 08:00 UTC case (D+1 forecast).
     """
-    from datetime import date, timedelta
-
-    yesterday = (date.today() - timedelta(days=1)).isoformat()
-    error_path = ERRORS_DIR / f"{yesterday}.json"
-
-    if error_path.exists():
-        return  # Already computed
-
     if not HISTORY_PATH.exists():
         return
 
     history = json.loads(HISTORY_PATH.read_text())
-    yesterday_fc = next(
-        (f for f in history.get("forecasts", []) if f.get("issued_at", "")[:10] == yesterday),
-        None,
-    )
-    if yesterday_fc is None:
+    fc_entries = history.get("forecasts", [])
+    if not fc_entries:
         return
 
-    # Load SMARD actuals for yesterday
     try:
         from energy_forecasting.config import PROCESSED_DATA_DIR
 
         merged = pd.read_parquet(PROCESSED_DATA_DIR / "merged.parquet")
         actuals = merged["target_price"].dropna()
-        yesterday_actuals = actuals[actuals.index.normalize().astype(str) == yesterday]
-        if len(yesterday_actuals) < 24:
-            return
+    except FileNotFoundError:
+        return
 
-        y_pred = np.array([f["forecast"] for f in yesterday_fc["forecasts"]])
-        y_true = yesterday_actuals.values[:24]
+    ERRORS_DIR.mkdir(parents=True, exist_ok=True)
+    for entry in fc_entries:
+        fc = entry.get("forecasts", [])
+        if len(fc) < 24:
+            continue
+        # Match by delivery date (first forecast timestamp), not issued_at date.
+        # The pipeline may forecast D+1 (08:00 UTC runs) or D+2 (runs after noon),
+        # so issued_at[:10] != delivery date in the common case.
+        delivery_date = fc[0]["timestamp"][:10]
+        error_path = ERRORS_DIR / f"{delivery_date}.json"
+        if error_path.exists():
+            continue
+
+        day_actuals = actuals[actuals.index.normalize().astype(str) == delivery_date]
+        if len(day_actuals) < 24:
+            continue  # Actuals not yet published for this delivery date
+
+        y_pred = np.array([f["forecast"] for f in fc[:24]])
+        y_true = day_actuals.values[:24]
         mae = float(np.mean(np.abs(y_true - y_pred)))
         rmse = float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
 
-        ERRORS_DIR.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "date": yesterday,
-            "mae": round(mae, 3),
-            "rmse": round(rmse, 3),
-        }
+        payload = {"date": delivery_date, "mae": round(mae, 3), "rmse": round(rmse, 3)}
         error_path.write_text(json.dumps(payload, indent=2))
-        logger.info(f"Daily error for {yesterday}: MAE={mae:.2f}, RMSE={rmse:.2f}")
-    except Exception:
-        logger.exception(f"Could not compute errors for {yesterday}")
+        logger.info(f"Backfilled error for {delivery_date}: MAE={mae:.2f}, RMSE={rmse:.2f}")
