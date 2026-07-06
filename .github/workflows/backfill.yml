@@ -106,26 +106,28 @@ jobs:
       - name: Backfill price history from model (retroactive batch inference)
         if: inputs.skip_inference != 'true'
         run: |
-          conda run -n energy-forecasting python3 - <<'EOF'
+          cat > /tmp/run_backfill.py << 'PYEOF'
           from energy_forecasting.deploy.publish import backfill_price_history_from_model, backfill_errors, write_errors_summary
           n = backfill_price_history_from_model(n_days=60)
           print(f"Added {n} pseudo-history entries")
           backfill_errors()
           write_errors_summary()
           print("Error backfill complete")
-          EOF
+          PYEOF
+          conda run -n energy-forecasting python3 /tmp/run_backfill.py
 
       - name: Backfill errors only (skip re-running inference)
         if: inputs.skip_inference == 'true'
         run: |
-          conda run -n energy-forecasting python3 - <<'EOF'
+          cat > /tmp/run_backfill.py << 'PYEOF'
           from energy_forecasting.deploy.publish import backfill_price_history_from_model, backfill_errors, write_errors_summary
           n = backfill_price_history_from_model(n_days=60)
           print(f"Added {n} pseudo-history entries")
           backfill_errors()
           write_errors_summary()
           print("Backfill complete")
-          EOF
+          PYEOF
+          conda run -n energy-forecasting python3 /tmp/run_backfill.py
 
       - name: Persist forecast history to Release
         if: always()
