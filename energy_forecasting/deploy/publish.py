@@ -140,9 +140,14 @@ def _append_price_history(price_df: pd.DataFrame, issued_at: str) -> None:
     else:
         history = {"target": "price", "forecasts": [], "count": 0}
 
-    # Deduplicate by issued_at date
+    # Deduplicate by delivery date (first forecast timestamp).
+    # Using issued_at[:10] was wrong: two runs on different calendar days can both forecast
+    # the same delivery date (e.g., an afternoon run after D-day prices are published forecasts D+2
+    # while the next morning's run also forecasts D+1 = same delivery date).
+    new_delivery = entry["forecasts"][0]["timestamp"][:10] if entry.get("forecasts") else None
     forecasts = [
-        f for f in history.get("forecasts", []) if f.get("issued_at", "")[:10] != issued_at[:10]
+        f for f in history.get("forecasts", [])
+        if not (f.get("forecasts") and f["forecasts"][0]["timestamp"][:10] == new_delivery)
     ]
     forecasts.append(entry)
     # Keep last HISTORY_DAYS entries
@@ -262,6 +267,7 @@ def write_model_metadata(issued_at: str | None = None) -> None:
                 "category": cat,
                 "weight": round(weights.get(entry["name"], 0.0), 6),
                 "run_id": entry["run_id"],
+                "cv_mae": round(entry.get("config", {}).get("cv_mae", 0.0), 3),
             }
         )
 

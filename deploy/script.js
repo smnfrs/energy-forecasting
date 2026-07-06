@@ -36,6 +36,15 @@
     },
   ];
 
+  // Per-TSO colors for sub-TSO lines (national always uses cfg.color)
+  const TSO_COLORS = {
+    "50hz":       "#e67e22",
+    "amprion":    "#27ae60",
+    "tennet":     "#8e44ad",
+    "transnetbw": "#c0392b",
+    "creos":      "#16a085",
+  };
+
   const CATEGORY_COLORS = {
     lgbm: "#22c55e",
     xgboost: "#3B82F6",
@@ -60,14 +69,37 @@
     } catch { return null; }
   }
 
+  // Parse forecast_history.json into an array of daily entries, deduped by delivery date.
+  // Where two entries have the same delivery date, production beats backtest; then later
+  // issued_at wins. This fixes the case where an afternoon run and the next morning's run
+  // both forecast the same delivery day.
   function adaptHistory(history) {
     if (!history || !history.forecasts) return [];
-    return history.forecasts
-      .filter(e => e.forecasts && e.forecasts.length === 24)
+    const all = history.forecasts
+      .filter(e => e.forecasts && e.forecasts.length >= 24)
       .map(e => ({
         date: e.forecasts[0].timestamp.slice(0, 10),
-        prices: e.forecasts.map(f => f.forecast),
+        source: e.source || "production",
+        issued_at: e.issued_at || "",
+        prices: e.forecasts.slice(0, 24).map(f => f.forecast),
+        lower: e.forecasts.slice(0, 24).map(f => f.forecast_lower ?? null),
+        upper: e.forecasts.slice(0, 24).map(f => f.forecast_upper ?? null),
+        timestamps: e.forecasts.slice(0, 24).map(f => f.timestamp),
       }));
+
+    const byDate = new Map();
+    for (const e of all) {
+      const ex = byDate.get(e.date);
+      if (!ex) {
+        byDate.set(e.date, e);
+      } else {
+        const newBetter =
+          (e.source === "production" && ex.source !== "production") ||
+          (e.source === ex.source && e.issued_at > ex.issued_at);
+        if (newBetter) byDate.set(e.date, e);
+      }
+    }
+    return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
   }
 
   function colorWithAlpha(hex, alpha) {
@@ -179,49 +211,75 @@
     }, { responsive: true, displayModeBar: false });
   }
 
-  // ── §2 Forecast vs Actual — Price (30 days) ───────────────────────────────
+  // ── §2 Forecast vs Actual — Price (7 days, hourly, with 90% CI) ───────────
 
   function renderHistoryChart(actuals, history) {
     const el = document.getElementById("history-chart");
     if (!actuals || !history || !history.length) { showNoData(el); return; }
 
+    // Hourly actuals map: date → [24 values]
     const actualsMap = {};
     for (const day of (actuals.days || [])) {
-      if (day.prices && day.prices.length) {
-        actualsMap[day.date] = day.prices.reduce((a, b) => a + b, 0) / day.prices.length;
-      }
+      if (day.prices && day.prices.length === 24) actualsMap[day.date] = day.prices;
     }
 
+    // Last 7 days where actuals are available
     const matched = history
-      .filter(e => actualsMap[e.date] !== undefined && e.prices && e.prices.length)
-      .sort((a, b) => a.date.localeCompare(b.date));
+      .filter(e => actualsMap[e.date] && e.prices && e.prices.length === 24)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(-7);
 
     if (!matched.length) { showNoData(el); return; }
 
-    const dates      = matched.map(e => e.date);
-    const actualYs   = dates.map(d => Math.round(actualsMap[d] * 100) / 100);
-    const forecastYs = matched.map(e => {
-      const mean = e.prices.reduce((a, b) => a + b, 0) / e.prices.length;
-      return Math.round(mean * 100) / 100;
+    // Flatten to hourly arrays
+    const xs = [], actualYs = [], forecastYs = [], lowerYs = [], upperYs = [];
+    for (const e of matched) {
+      const act = actualsMap[e.date];
+      for (let h = 0; h < 24; h++) {
+        // Normalise timestamp: drop tz suffix, ensure T separator
+        const raw = e.timestamps[h] || `${e.date}T${String(h).padStart(2, "0")}:00:00`;
+        xs.push(raw.replace(/([+-]\d{2}:\d{2}|Z)$/, "").replace(" ", "T"));
+        actualYs.push(act[h]);
+        forecastYs.push(e.prices[h]);
+        // Collapse null CI bounds to forecast value → zero-width band for backtest entries
+        lowerYs.push(e.lower[h] !== null ? e.lower[h] : e.prices[h]);
+        upperYs.push(e.upper[h] !== null ? e.upper[h] : e.prices[h]);
+      }
+    }
+
+    const hasCI = matched.some(e => e.lower.some(v => v !== null));
+
+    const traces = [];
+    if (hasCI) {
+      // CI band: lower bound trace then fill-to-next upper
+      traces.push({
+        x: xs, y: lowerYs, type: "scatter", mode: "none",
+        showlegend: false, hoverinfo: "skip",
+      });
+      traces.push({
+        x: xs, y: upperYs, type: "scatter", mode: "none",
+        fill: "tonexty", fillcolor: "rgba(150,150,150,0.18)",
+        name: `${t("pi_band")} (90%)`, hoverinfo: "skip",
+      });
+    }
+
+    traces.push({
+      x: xs, y: actualYs, type: "scatter", mode: "lines",
+      name: t("actual"),
+      line: { color: "#6c757d", width: 2 },
+    });
+    traces.push({
+      x: xs, y: forecastYs, type: "scatter", mode: "lines",
+      name: t("forecast"),
+      line: { color: "#3B82F6", width: 1.5, dash: "dash" },
     });
 
-    Plotly.newPlot(el, [
-      {
-        x: dates, y: actualYs, type: "scatter", mode: "lines+markers",
-        name: t("actual"), line: { color: "#6c757d", width: 2 },
-        marker: { size: 4, color: "#6c757d" },
-      },
-      {
-        x: dates, y: forecastYs, type: "scatter", mode: "lines+markers",
-        name: t("forecast"), line: { color: "#3B82F6", width: 2, dash: "dash" },
-        marker: { size: 4, color: "#3B82F6" },
-      },
-    ], {
-      xaxis: { type: "date", title: "" },
+    Plotly.newPlot(el, traces, {
+      xaxis: { type: "date", title: "", nticks: 7 },
       yaxis: { title: "EUR/MWh" },
       legend: { orientation: "h", y: -0.2 },
       margin: { t: 20, r: 20, b: 60, l: 65 },
-      height: 280,
+      height: 300,
     }, { responsive: true, displayModeBar: false });
   }
 
@@ -288,6 +346,19 @@
     setupGenLoadCards(_allData.glActuals);
   }
 
+  // Build hourly actuals flat arrays for a given target from glActuals
+  function buildActualSeries(glActuals, target) {
+    if (!glActuals || !glActuals[target]) return { xs: [], ys: [] };
+    const xs = [], ys = [];
+    for (const day of (glActuals[target].days || [])) {
+      for (let h = 0; h < day.values.length; h++) {
+        xs.push(`${day.date}T${String(h).padStart(2, "0")}:00:00`);
+        ys.push(day.values[h]);
+      }
+    }
+    return { xs, ys };
+  }
+
   function renderGenLoadSummary(genLoad, glActuals) {
     const el = document.getElementById("summary-chart");
     const { wo, woff, sol, load, gld } = genLoad || {};
@@ -298,51 +369,66 @@
 
     const traces = [];
 
-    const genSeries = [
-      { data: wo,   target: "wind_onshore",  name: t("wind_onshore"),  color: "#2266CC", fill: "tozeroy" },
-      { data: woff, target: "wind_offshore", name: t("wind_offshore"), color: "#44AADD", fill: "tonexty" },
-      { data: sol,  target: "solar",         name: t("solar"),         color: "#DDAA00", fill: "tonexty" },
+    // ── Actual generation stacked area (solid fill) ──
+    // Each target's actual values are stacked on top of the previous.
+    const actualGenSeries = [
+      { target: "wind_onshore",  name: `${t("wind_onshore")} (${t("actual")})`,  color: "#2266CC" },
+      { target: "wind_offshore", name: `${t("wind_offshore")} (${t("actual")})`, color: "#44AADD" },
+      { target: "solar",         name: `${t("solar")} (${t("actual")})`,         color: "#DDAA00" },
     ];
-
-    for (const series of genSeries) {
-      if (!series.data) continue;
+    for (const [i, s] of actualGenSeries.entries()) {
+      const { xs, ys } = buildActualSeries(glActuals, s.target);
+      if (!xs.length) continue;
       traces.push({
-        x: series.data.forecasts.map(f => f.timestamp),
-        y: series.data.forecasts.map(f => f.forecast),
-        type: "scatter", mode: "lines", name: series.name,
-        stackgroup: "gen", fill: series.fill,
-        fillcolor: colorWithAlpha(series.color, 0.65),
-        line: { color: series.color, width: 1 },
+        x: xs, y: ys, type: "scatter", mode: "lines",
+        name: s.name,
+        stackgroup: "gen_actual",
+        fill: i === 0 ? "tozeroy" : "tonexty",
+        fillcolor: colorWithAlpha(s.color, 0.7),
+        line: { color: s.color, width: 1 },
       });
     }
 
-    // Other generation: gen_load_diff + load − wind_onshore − wind_offshore − solar (≥ 0)
-    if (gld && wo && woff && sol && load) {
-      const gldMap  = new Map(gld.forecasts.map(f => [f.timestamp, f.forecast]));
-      const woMap   = new Map(wo.forecasts.map(f => [f.timestamp, f.forecast]));
-      const woffMap = new Map(woff.forecasts.map(f => [f.timestamp, f.forecast]));
-      const solMap  = new Map(sol.forecasts.map(f => [f.timestamp, f.forecast]));
-      const loadMap = new Map(load.forecasts.map(f => [f.timestamp, f.forecast]));
+    // ── Forecast generation: cumulative boundary dotted lines ──
+    // Manually accumulate so lines trace the stacked tops without fill.
+    const fcSeries = [
+      { data: wo,   name: `${t("wind_onshore")} (${t("forecast")})`,  color: "#2266CC" },
+      { data: woff, name: `${t("wind_offshore")} (${t("forecast")})`, color: "#44AADD" },
+      { data: sol,  name: `${t("solar")} (${t("forecast")})`,         color: "#DDAA00" },
+    ].filter(s => s.data);
 
-      const timestamps = gld.forecasts.map(f => f.timestamp);
-      const otherYs = timestamps.map(hr => Math.max(
-        0,
-        (gldMap.get(hr) ?? 0) + (loadMap.get(hr) ?? 0)
-          - (woMap.get(hr) ?? 0) - (woffMap.get(hr) ?? 0) - (solMap.get(hr) ?? 0)
-      ));
+    if (fcSeries.length) {
+      // Build timestamp → value maps for each component
+      const maps = fcSeries.map(s => new Map(s.data.forecasts.map(f => [f.timestamp, f.forecast])));
+      const timestamps = fcSeries[0].data.forecasts.map(f => f.timestamp);
 
-      if (otherYs.some(v => v > 0)) {
+      let cumYs = new Array(timestamps.length).fill(0);
+      for (let i = 0; i < fcSeries.length; i++) {
+        cumYs = cumYs.map((acc, j) => acc + (maps[i].get(timestamps[j]) ?? 0));
         traces.push({
-          x: timestamps, y: otherYs,
-          type: "scatter", mode: "lines", name: t("other_gen"),
-          stackgroup: "gen", fill: "tonexty",
-          fillcolor: colorWithAlpha("#888888", 0.5),
-          line: { color: "#888888", width: 1 },
+          x: timestamps, y: [...cumYs],
+          type: "scatter", mode: "lines",
+          name: fcSeries[i].name,
+          line: { color: fcSeries[i].color, width: 1.5, dash: "dot" },
+          showlegend: true,
         });
       }
     }
 
-    // Load forecast (secondary axis, dashed)
+    // ── Load actual (solid red line, y2) ──
+    if (glActuals && glActuals.load) {
+      const { xs, ys } = buildActualSeries(glActuals, "load");
+      if (xs.length) {
+        traces.push({
+          x: xs, y: ys, type: "scatter", mode: "lines",
+          name: `${t("load")} (${t("actual")})`,
+          yaxis: "y2",
+          line: { color: "#EE0000", width: 2.5 },
+        });
+      }
+    }
+
+    // ── Load forecast (dashed red line, y2) ──
     if (load) {
       traces.push({
         x: load.forecasts.map(f => f.timestamp),
@@ -350,58 +436,17 @@
         type: "scatter", mode: "lines",
         name: `${t("load")} (${t("forecast")})`,
         yaxis: "y2",
-        line: { color: "#EE0000", width: 2, dash: "dash" },
+        line: { color: "#EE0000", width: 1.5, dash: "dash" },
       });
-    }
-
-    // Actuals overlays — no stackgroup so they don't distort the forecast stack
-    if (glActuals) {
-      for (const target of ["wind_onshore", "wind_offshore", "solar"]) {
-        const td = glActuals[target];
-        if (!td || !td.days) continue;
-        const xs = [], ys = [];
-        for (const day of td.days) {
-          for (let h = 0; h < day.values.length; h++) {
-            xs.push(`${day.date}T${String(h).padStart(2, "0")}:00:00Z`);
-            ys.push(day.values[h]);
-          }
-        }
-        if (xs.length) {
-          traces.push({
-            x: xs, y: ys, type: "scatter", mode: "lines",
-            name: `${t(target)} (${t("actual")})`,
-            line: { color: GL_COLORS[target], width: 2 },
-            opacity: 0.9, showlegend: false,
-          });
-        }
-      }
-      if (glActuals.load) {
-        const xs = [], ys = [];
-        for (const day of (glActuals.load.days || [])) {
-          for (let h = 0; h < day.values.length; h++) {
-            xs.push(`${day.date}T${String(h).padStart(2, "0")}:00:00Z`);
-            ys.push(day.values[h]);
-          }
-        }
-        if (xs.length) {
-          traces.push({
-            x: xs, y: ys, type: "scatter", mode: "lines",
-            name: `${t("load")} (${t("actual")})`,
-            yaxis: "y2",
-            line: { color: "#EE0000", width: 2 },
-            opacity: 0.9, showlegend: false,
-          });
-        }
-      }
     }
 
     Plotly.newPlot(el, traces, {
       xaxis: { type: "date", title: "" },
-      yaxis: { title: `MW (${t("gen_load_section").split("&")[0].trim()})`, rangemode: "tozero" },
+      yaxis: { title: "MW (Generation)", rangemode: "tozero" },
       yaxis2: { title: `MW (${t("load")})`, overlaying: "y", side: "right", rangemode: "tozero" },
-      legend: { orientation: "h", y: -0.22 },
-      margin: { t: 20, r: 80, b: 80, l: 65 },
-      height: 350,
+      legend: { orientation: "h", y: -0.28 },
+      margin: { t: 20, r: 80, b: 100, l: 65 },
+      height: 380,
     }, { responsive: true, displayModeBar: false });
   }
 
@@ -423,6 +468,7 @@
 
     for (const { tso, data } of availableTSOs) {
       const isNational = tso === "national";
+      const tsoColor = isNational ? cfg.color : (TSO_COLORS[tso] || "#888888");
       const forecasts = data.forecasts || [];
       const ts    = forecasts.map(f => f.timestamp);
       const ys    = forecasts.map(f => f.forecast);
@@ -434,18 +480,18 @@
       if (hasPI) {
         traces.push({
           x: ts, y: lower, type: "scatter", mode: "none",
-          fill: null, showlegend: false, hoverinfo: "skip", visible: true,
+          fill: "none", showlegend: false, hoverinfo: "skip", visible: true,
         });
         traces.push({
           x: ts, y: upper, type: "scatter", mode: "none",
-          fill: "tonexty", fillcolor: colorWithAlpha(cfg.color, 0.15),
+          fill: "tonexty", fillcolor: "rgba(130,130,130,0.18)",
           name: t("pi_band"), showlegend: true, hoverinfo: "skip", visible: true,
         });
       }
       traces.push({
         x: ts, y: ys, type: "scatter", mode: "lines",
         name: cfg.tsoLabels[tso] || tso,
-        line: { color: cfg.color, width: isNational ? 2 : 1.5, dash: "dash" },
+        line: { color: tsoColor, width: isNational ? 2 : 1.5, dash: "dash" },
         visible: isNational,
       });
 
@@ -461,20 +507,14 @@
       controls.appendChild(label);
     }
 
-    // Actuals overlay (national only, dotted line independent of stackgroup)
+    // Actuals overlay: solid line (national aggregate)
     const actualsStartIdx = traces.length;
     if (glActuals && glActuals[cfg.target]) {
-      const xs = [], ys = [];
-      for (const day of (glActuals[cfg.target].days || [])) {
-        for (let h = 0; h < day.values.length; h++) {
-          xs.push(`${day.date}T${String(h).padStart(2, "0")}:00:00Z`);
-          ys.push(day.values[h]);
-        }
-      }
+      const { xs, ys } = buildActualSeries(glActuals, cfg.target);
       if (xs.length) {
         traces.push({
           x: xs, y: ys, type: "scatter", mode: "lines",
-          name: t("actual"),
+          name: `${cfg.tsoLabels["national"] || "National"} (${t("actual")})`,
           line: { color: cfg.color, width: 2.5 },
           opacity: 0.9,
         });
@@ -482,17 +522,33 @@
     }
     const hasActualsTrace = traces.length > actualsStartIdx;
 
+    // Determine x-axis window: last 3 days of actuals + forecast extent
+    let xRange = null;
+    if (glActuals && glActuals[cfg.target] && glActuals[cfg.target].days) {
+      const days = glActuals[cfg.target].days;
+      if (days.length >= 2) {
+        // Start 3 days before the last actuals day
+        const lastActualDay = days[days.length - 1].date;
+        const startDay = new Date(lastActualDay);
+        startDay.setDate(startDay.getDate() - 3);
+        xRange = [startDay.toISOString().slice(0, 10), null]; // null = auto end
+      }
+    }
+
     const chartDiv = document.createElement("div");
     container.appendChild(controls);
     container.appendChild(chartDiv);
 
-    Plotly.newPlot(chartDiv, traces, {
+    const layout = {
       xaxis: { type: "date", title: "" },
       yaxis: { title: t("unit_mw"), rangemode: "tozero" },
       legend: { orientation: "h", y: -0.22 },
       margin: { t: 20, r: 20, b: 80, l: 65 },
-      height: 280,
-    }, { responsive: true, displayModeBar: false });
+      height: 300,
+    };
+    if (xRange) layout.xaxis.range = xRange;
+
+    Plotly.newPlot(chartDiv, traces, layout, { responsive: true, displayModeBar: false });
 
     controls.querySelectorAll("input[type=checkbox]").forEach(cb => {
       cb.addEventListener("change", () => {
@@ -529,10 +585,57 @@
   // ── Monitoring tab ────────────────────────────────────────────────────────
 
   function renderMonitoringTab() {
+    renderModelMaeChart(_allData.metadata);
     renderErrorTrend(_allData.summary);
+    renderHourlyErrorProfile(_allData.actuals, _allData.history);
     renderCompositionChart(_allData.metadata);
     renderGenLoadErrors(_allData.glErrors);
     renderRetrainLog(_allData.retrainHistory);
+  }
+
+  // Per-model CV MAE bar chart (replaces ensemble-only trend as first chart)
+  function renderModelMaeChart(metadata) {
+    const el = document.getElementById("model-mae-chart");
+    if (!el) return;
+    if (!metadata || !metadata.models || !metadata.models.length) {
+      noDataInline(el); return;
+    }
+
+    const models = [...metadata.models]
+      .filter(m => m.cv_mae > 0)
+      .sort((a, b) => a.cv_mae - b.cv_mae);
+
+    if (!models.length) { noDataInline(el); return; }
+
+    // Short display names
+    const shortName = name => name.replace(/__fs_.*$/, "").replace("Regressor", "").replace("Classifier", "");
+
+    Plotly.newPlot(el, [{
+      x: models.map(m => m.cv_mae),
+      y: models.map(m => shortName(m.name)),
+      type: "bar",
+      orientation: "h",
+      marker: { color: models.map(m => CATEGORY_COLORS[m.category] || "#6c757d") },
+      text: models.map(m => `${m.cv_mae.toFixed(1)}`),
+      textposition: "outside",
+      name: "CV MAE",
+    }], {
+      xaxis: { title: "CV MAE (EUR/MWh)", zeroline: true },
+      yaxis: { automargin: true },
+      margin: { t: 10, r: 80, b: 50, l: 200 },
+      height: Math.max(180, models.length * 45 + 60),
+      shapes: [{
+        type: "line",
+        x0: metadata.holdout_mae, x1: metadata.holdout_mae,
+        y0: -0.5, y1: models.length - 0.5,
+        line: { color: "#555", width: 1.5, dash: "dash" },
+      }],
+      annotations: [{
+        x: metadata.holdout_mae, y: models.length - 0.5,
+        text: `Ensemble holdout: ${metadata.holdout_mae?.toFixed(2)}`,
+        showarrow: false, xanchor: "left", font: { size: 11 },
+      }],
+    }, { responsive: true, displayModeBar: false });
   }
 
   function renderErrorTrend(summary) {
@@ -560,7 +663,67 @@
       yaxis: { title: "EUR/MWh" },
       legend: { orientation: "h", y: -0.2 },
       margin: { t: 20, r: 20, b: 60, l: 65 },
-      height: 280,
+      height: 260,
+    }, { responsive: true, displayModeBar: false });
+  }
+
+  // Hourly error profile: average MAE/RMSE per hour-of-day over last 30 days
+  function renderHourlyErrorProfile(actuals, history) {
+    const el = document.getElementById("hourly-error-chart");
+    if (!el) return;
+    if (!actuals || !history || !history.length) { noDataInline(el); return; }
+
+    const actualsMap = {};
+    for (const day of (actuals.days || [])) {
+      if (day.prices && day.prices.length === 24) actualsMap[day.date] = day.prices;
+    }
+
+    const maeSums  = new Array(24).fill(0);
+    const rmseSums = new Array(24).fill(0);
+    const counts   = new Array(24).fill(0);
+
+    for (const e of history) {
+      const act = actualsMap[e.date];
+      if (!act || e.prices.length < 24) continue;
+      for (let h = 0; h < 24; h++) {
+        const err = e.prices[h] - act[h];
+        maeSums[h]  += Math.abs(err);
+        rmseSums[h] += err * err;
+        counts[h]   += 1;
+      }
+    }
+
+    const hours = Array.from({ length: 24 }, (_, h) => h);
+    const maeByHour  = hours.map(h => counts[h] ? Math.round(maeSums[h]  / counts[h] * 100) / 100 : null);
+    const rmseByHour = hours.map(h => counts[h] ? Math.round(Math.sqrt(rmseSums[h] / counts[h]) * 100) / 100 : null);
+    const nDays = Math.max(...counts);
+
+    if (!nDays) { noDataInline(el); return; }
+
+    Plotly.newPlot(el, [
+      {
+        x: hours, y: maeByHour, type: "bar",
+        name: t("mae"),
+        marker: { color: "#3B82F6" },
+      },
+      {
+        x: hours, y: rmseByHour, type: "scatter", mode: "lines+markers",
+        name: t("rmse"),
+        line: { color: "#ef4444", width: 2 },
+        marker: { size: 5 },
+        yaxis: "y",
+      },
+    ], {
+      xaxis: { title: "Hour of day (UTC)", dtick: 2, tick0: 0 },
+      yaxis: { title: "EUR/MWh" },
+      legend: { orientation: "h", y: -0.2 },
+      margin: { t: 20, r: 20, b: 60, l: 65 },
+      height: 240,
+      annotations: [{
+        x: 23, y: 0, xanchor: "right", yanchor: "bottom",
+        text: `${nDays} days`,
+        showarrow: false, font: { size: 11, color: "#888" },
+      }],
     }, { responsive: true, displayModeBar: false });
   }
 
@@ -607,17 +770,35 @@
     if (!glErrors || !Object.keys(glErrors).length) { noDataInline(el); return; }
 
     const traces = [];
+    let hasOOF = false;
+    let hasProduction = false;
+
     for (const [target, data] of Object.entries(glErrors)) {
       if (!data.dates || !data.mae) continue;
+      // Tag each point as OOF (pre-production) or production (recent)
+      // OOF dates are anything before June 2026; production is July 2026+
+      const colors = data.dates.map(d => d >= "2026-07" ? "#e74c3c" : (GL_COLORS[target] || "#888"));
+      if (data.dates.some(d => d < "2026-07")) hasOOF = true;
+      if (data.dates.some(d => d >= "2026-07")) hasProduction = true;
+
       traces.push({
         x: data.dates, y: data.mae,
         type: "scatter", mode: "lines+markers",
         name: t(target),
         line: { color: GL_COLORS[target] || "#888", width: 2 },
-        marker: { size: 4 },
+        marker: { size: 5, color: colors },
       });
     }
     if (!traces.length) { noDataInline(el); return; }
+
+    const annotations = [];
+    if (hasOOF && hasProduction) {
+      annotations.push({
+        x: "2026-04-05", y: 1, xref: "x", yref: "paper",
+        text: "← OOF (cross-val) | Production →",
+        showarrow: false, font: { size: 11, color: "#888" }, xanchor: "center",
+      });
+    }
 
     Plotly.newPlot(el, traces, {
       xaxis: { type: "date", title: "" },
@@ -625,6 +806,7 @@
       legend: { orientation: "h", y: -0.2 },
       margin: { t: 20, r: 20, b: 60, l: 80 },
       height: 280,
+      annotations,
     }, { responsive: true, displayModeBar: false });
   }
 
@@ -687,6 +869,7 @@
 
     _allData = {
       metadata, summary, retrainHistory, glErrors, glActuals,
+      actuals, history,
       genLoad: { wo, woff, sol, load, gld },
     };
 
