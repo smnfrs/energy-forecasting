@@ -370,8 +370,8 @@
           traces.push({
             x: xs, y: ys, type: "scatter", mode: "lines",
             name: `${t(target)} (${t("actual")})`,
-            line: { color: GL_COLORS[target], width: 1.5, dash: "dot" },
-            opacity: 0.75, showlegend: false,
+            line: { color: GL_COLORS[target], width: 2 },
+            opacity: 0.9, showlegend: false,
           });
         }
       }
@@ -388,8 +388,8 @@
             x: xs, y: ys, type: "scatter", mode: "lines",
             name: `${t("load")} (${t("actual")})`,
             yaxis: "y2",
-            line: { color: "#EE0000", width: 1.5, dash: "dot" },
-            opacity: 0.75, showlegend: false,
+            line: { color: "#EE0000", width: 2 },
+            opacity: 0.9, showlegend: false,
           });
         }
       }
@@ -445,7 +445,7 @@
       traces.push({
         x: ts, y: ys, type: "scatter", mode: "lines",
         name: cfg.tsoLabels[tso] || tso,
-        line: { color: cfg.color, width: isNational ? 2 : 1.5, dash: isNational ? "solid" : "dash" },
+        line: { color: cfg.color, width: isNational ? 2 : 1.5, dash: "dash" },
         visible: isNational,
       });
 
@@ -475,8 +475,8 @@
         traces.push({
           x: xs, y: ys, type: "scatter", mode: "lines",
           name: t("actual"),
-          line: { color: cfg.color, width: 1.5, dash: "dot" },
-          opacity: 0.7,
+          line: { color: cfg.color, width: 2.5 },
+          opacity: 0.9,
         });
       }
     }

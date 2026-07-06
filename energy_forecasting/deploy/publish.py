@@ -506,6 +506,171 @@ def write_gen_load_errors() -> None:
         logger.info(f"Written gen_load_errors_summary.json ({len(result)} targets)")
 
 
+def backfill_price_history_from_model(n_days: int = 60) -> int:
+    """Retroactively generate price forecasts for the past n_days using the production ensemble.
+
+    Runs feature engineering ONCE on merged.parquet, then batch-predicts for all target
+    delivery dates not already covered by production entries in forecast_history.json.
+    Injects pseudo-history entries (source="backtest") so the price history and error
+    charts can display 30+ days of data before production runs have accumulated.
+
+    Returns the number of new pseudo-history entries written.
+    """
+    try:
+        from energy_forecasting.config import PROCESSED_DATA_DIR
+        from energy_forecasting.config.features import PRICE_FEATURES_MAX
+        from energy_forecasting.features.engine import engineer_features as _eng
+        from energy_forecasting.modeling.datasets import DATASET_DIR
+        from energy_forecasting.deploy.model_store import (
+            load_ensemble_config,
+            load_price_model,
+            load_price_model_scaler,
+            production_model_names,
+        )
+    except ImportError as exc:
+        logger.warning(f"backfill_price_history_from_model: import failed — {exc}")
+        return 0
+
+    if HISTORY_PATH.exists():
+        history = json.loads(HISTORY_PATH.read_text())
+    else:
+        history = {"target": "price", "forecasts": [], "count": 0}
+
+    existing_delivery_dates: set[str] = {
+        e["forecasts"][0]["timestamp"][:10]
+        for e in history.get("forecasts", [])
+        if e.get("forecasts") and len(e["forecasts"]) >= 24
+    }
+
+    merged_path = PROCESSED_DATA_DIR / "merged.parquet"
+    if not merged_path.exists():
+        logger.warning("backfill_price_history_from_model: merged.parquet not found")
+        return 0
+
+    merged = pd.read_parquet(merged_path)
+    last_ts = merged.index.max()
+
+    target_dates = []
+    for i in range(n_days, 0, -1):
+        d = (last_ts - pd.Timedelta(days=i)).normalize()
+        delivery_date = d.strftime("%Y-%m-%d")
+        if delivery_date not in existing_delivery_dates:
+            target_dates.append(delivery_date)
+
+    if not target_dates:
+        logger.info("backfill_price_history_from_model: all dates already covered")
+        return 0
+
+    logger.info(f"backfill_price_history_from_model: engineering features for {len(target_dates)} target dates…")
+    try:
+        full_features = _eng(merged, PRICE_FEATURES_MAX, validate=False)
+    except Exception:
+        logger.exception("backfill_price_history_from_model: feature engineering failed")
+        return 0
+
+    try:
+        cfg = load_ensemble_config()
+        prod_names = set(production_model_names(cfg))
+        model_entries = {e["name"]: e for e in cfg["models"] if e["name"] in prod_names}
+        weights = cfg["ensemble"]["weights"]
+    except Exception:
+        logger.exception("backfill_price_history_from_model: failed to load ensemble config")
+        return 0
+
+    version_cols: dict[str, list[str]] = {}
+    for entry in model_entries.values():
+        fv = entry["feature_version"]
+        if fv in version_cols:
+            continue
+        ds_path = DATASET_DIR / f"price_{fv}.parquet"
+        if ds_path.exists():
+            ds_sample = pd.read_parquet(ds_path)
+            fcols = [c for c in ds_sample.columns if not c.endswith("__target")]
+            version_cols[fv] = [c for c in fcols if c in full_features.columns]
+        else:
+            version_cols[fv] = [c for c in full_features.columns if not c.endswith("__target")]
+
+    loaded: dict[str, tuple] = {}
+    for name, entry in model_entries.items():
+        try:
+            model = load_price_model(entry["run_id"])
+            scaler = load_price_model_scaler(entry["run_id"])
+            loaded[name] = (model, scaler, entry["feature_version"])
+        except Exception:
+            logger.warning(f"backfill_price_history_from_model: could not load model {name}")
+
+    if not loaded:
+        logger.warning("backfill_price_history_from_model: no models loaded")
+        return 0
+
+    new_entries: list[dict] = []
+    for delivery_date in target_dates:
+        day_start = pd.Timestamp(f"{delivery_date} 00:00")
+        day_end = pd.Timestamp(f"{delivery_date} 23:00")
+        if day_start not in full_features.index or day_end not in full_features.index:
+            continue
+
+        preds: list[np.ndarray] = []
+        w_used: list[float] = []
+        skip = False
+        for name, (model, scaler, fv) in loaded.items():
+            cols = version_cols.get(fv, [])
+            if not cols:
+                skip = True
+                break
+            try:
+                X = full_features.loc[day_start:day_end, cols]
+            except Exception:
+                skip = True
+                break
+            if X.shape[0] != 24 or X.isna().any(axis=None):
+                skip = True
+                break
+            X_arr = scaler.transform(X) if scaler is not None else X.values
+            try:
+                y = np.asarray(model.predict(X_arr))
+                preds.append(y)
+                w_used.append(weights[name])
+            except Exception:
+                skip = True
+                break
+        if skip or not preds:
+            continue
+
+        w = np.array(w_used, dtype=float)
+        w /= w.sum()
+        y_blend = (np.stack(preds, axis=1) * w).sum(axis=1)
+
+        issued_at = (
+            pd.Timestamp(delivery_date) - pd.Timedelta(days=1)
+        ).strftime("%Y-%m-%dT08:00:00Z")
+        new_entries.append({
+            "target": "price",
+            "region": "DE_LU",
+            "issued_at": issued_at,
+            "horizon_hours": 24,
+            "unit": "EUR/MWh",
+            "source": "backtest",
+            "forecasts": [
+                {"timestamp": f"{delivery_date}T{h:02d}:00:00", "forecast": round(float(y_blend[h]), 3)}
+                for h in range(24)
+            ],
+        })
+
+    if not new_entries:
+        logger.info("backfill_price_history_from_model: no entries generated (feature gaps or model errors)")
+        return 0
+
+    all_forecasts = new_entries + history.get("forecasts", [])
+    all_forecasts.sort(key=lambda e: e.get("issued_at", ""))
+    all_forecasts = all_forecasts[-HISTORY_DAYS:]
+    history["forecasts"] = all_forecasts
+    history["count"] = len(all_forecasts)
+    HISTORY_PATH.write_text(json.dumps(history, indent=2))
+    logger.info(f"backfill_price_history_from_model: added {len(new_entries)} pseudo-history entries")
+    return len(new_entries)
+
+
 def write_outputs(
     price_df: pd.DataFrame,
     gen_load_results: dict,

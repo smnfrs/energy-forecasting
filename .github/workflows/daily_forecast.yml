@@ -131,6 +131,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Restore gen/load national historical forecasts from Release
+        run: |
+          gh release download v1.0.0 --repo $REPO --pattern 'gen_load_hf.tar.gz' --dir /tmp/ --clobber 2>/dev/null \
+            && tar -xzf /tmp/gen_load_hf.tar.gz \
+            && echo "Restored gen_load national historical forecasts" \
+            || echo "gen_load_hf.tar.gz not in Release, gen/load errors will be partial"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Run inference (skip data update)
         run: conda run -n energy-forecasting energy-forecasting deploy forecast --skip-update
 

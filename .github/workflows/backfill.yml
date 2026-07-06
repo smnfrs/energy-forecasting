@@ -89,15 +89,38 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Restore gen/load national historical forecasts from Release
+        run: |
+          gh release download v1.0.0 --repo $REPO --pattern 'gen_load_hf.tar.gz' --dir /tmp/ --clobber 2>/dev/null \
+            && tar -xzf /tmp/gen_load_hf.tar.gz \
+            && echo "Restored gen_load national historical forecasts" \
+            || echo "gen_load_hf.tar.gz not in Release"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Run inference (re-generates today's forecast + backfills errors)
         if: inputs.skip_inference != 'true'
         run: conda run -n energy-forecasting energy-forecasting deploy forecast --skip-update
+
+      - name: Backfill price history from model (retroactive batch inference)
+        if: inputs.skip_inference != 'true'
+        run: |
+          conda run -n energy-forecasting python3 - <<'EOF'
+          from energy_forecasting.deploy.publish import backfill_price_history_from_model, backfill_errors, write_errors_summary
+          n = backfill_price_history_from_model(n_days=60)
+          print(f"Added {n} pseudo-history entries")
+          backfill_errors()
+          write_errors_summary()
+          print("Error backfill complete")
+          EOF
 
       - name: Backfill errors only (skip re-running inference)
         if: inputs.skip_inference == 'true'
         run: |
           conda run -n energy-forecasting python3 - <<'EOF'
-          from energy_forecasting.deploy.publish import backfill_errors, write_errors_summary
+          from energy_forecasting.deploy.publish import backfill_price_history_from_model, backfill_errors, write_errors_summary
+          n = backfill_price_history_from_model(n_days=60)
+          print(f"Added {n} pseudo-history entries")
           backfill_errors()
           write_errors_summary()
           print("Backfill complete")
