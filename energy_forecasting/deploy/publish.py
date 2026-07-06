@@ -577,6 +577,25 @@ def backfill_price_history_from_model(n_days: int = 60) -> int:
         logger.exception("backfill_price_history_from_model: failed to load ensemble config")
         return 0
 
+    # Load feature column lists per version.
+    # Priority: (1) existing dataset parquets via pyarrow schema (fast, no full read),
+    # (2) price_feature_cols.json downloaded from Release alongside model artifacts.
+    _feature_cols_cache: dict[str, list[str]] | None = None
+    def _load_feature_cols_json() -> dict[str, list[str]]:
+        nonlocal _feature_cols_cache
+        if _feature_cols_cache is not None:
+            return _feature_cols_cache
+        # Look in models/ dir (downloaded alongside model artifacts in CI)
+        from energy_forecasting.config import MODELS_DIR
+        candidate = MODELS_DIR / "price" / ".." / "price_feature_cols.json"
+        # Normalise: models/price/../price_feature_cols.json → models/price_feature_cols.json
+        candidate = (MODELS_DIR / "price_feature_cols.json").resolve()
+        if candidate.exists():
+            _feature_cols_cache = json.loads(candidate.read_text())
+        else:
+            _feature_cols_cache = {}
+        return _feature_cols_cache
+
     version_cols: dict[str, list[str]] = {}
     for entry in model_entries.values():
         fv = entry["feature_version"]
@@ -584,11 +603,21 @@ def backfill_price_history_from_model(n_days: int = 60) -> int:
             continue
         ds_path = DATASET_DIR / f"price_{fv}.parquet"
         if ds_path.exists():
-            ds_sample = pd.read_parquet(ds_path)
-            fcols = [c for c in ds_sample.columns if not c.endswith("__target")]
+            try:
+                import pyarrow.parquet as _pq
+                schema = _pq.read_schema(ds_path)
+                fcols = [c for c in schema.names if not c.endswith("__target")]
+            except Exception:
+                ds_sample = pd.read_parquet(ds_path)
+                fcols = [c for c in ds_sample.columns if not c.endswith("__target")]
             version_cols[fv] = [c for c in fcols if c in full_features.columns]
         else:
-            version_cols[fv] = [c for c in full_features.columns if not c.endswith("__target")]
+            cached = _load_feature_cols_json().get(fv)
+            if cached:
+                version_cols[fv] = [c for c in cached if c in full_features.columns]
+            else:
+                logger.warning(f"backfill_price_history_from_model: no column list for {fv}; skipping")
+                version_cols[fv] = []
 
     loaded: dict[str, tuple] = {}
     for name, entry in model_entries.items():
