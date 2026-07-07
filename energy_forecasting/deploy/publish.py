@@ -353,6 +353,36 @@ def write_gen_load_actuals() -> None:
         return
 
     result: dict[str, dict] = {}
+    # Also keep Berlin-local combined series to compute gen_load_diff actuals.
+    _berlin_combined: dict[str, pd.Series] = {}
+
+    def _to_berlin(s: pd.Series) -> pd.Series:
+        idx = s.index
+        new_idx = (
+            idx.tz_convert("Europe/Berlin").tz_localize(None)
+            if idx.tz is not None
+            else idx.tz_localize("UTC").tz_convert("Europe/Berlin").tz_localize(None)
+        )
+        return s.set_axis(new_idx)
+
+    def _series_to_days(combined: pd.Series) -> list[dict]:
+        by_date: dict[str, list] = {}
+        for ts, val in combined.items():
+            if pd.isna(val):
+                continue
+            by_date.setdefault(ts.strftime("%Y-%m-%d"), []).append(round(float(val), 1))
+        sorted_dates = sorted(by_date.items())
+        complete = [
+            {"date": d, "values": vs}
+            for d, vs in sorted_dates
+            if len(vs) == 24
+        ][-7:]
+        if sorted_dates:
+            last_date, last_vals = sorted_dates[-1]
+            if last_vals and len(last_vals) < 24 and (not complete or complete[-1]["date"] != last_date):
+                complete.append({"date": last_date, "values": last_vals})
+        return complete
+
     for target, tsos in _TARGET_TSO_FILES.items():
         series_list = []
         for tso in tsos:
@@ -371,35 +401,24 @@ def write_gen_load_actuals() -> None:
         # TSO parquets are UTC; tz-naive parquets are also assumed UTC.
         # Using Berlin local ensures date boundaries match delivery-hour convention
         # and align with the forecast timestamps written by _ts().
-        idx = combined.index
-        combined.index = (
-            idx.tz_convert("Europe/Berlin").tz_localize(None)
-            if idx.tz is not None
-            else idx.tz_localize("UTC").tz_convert("Europe/Berlin").tz_localize(None)
-        )
+        combined = _to_berlin(combined)
+        _berlin_combined[target] = combined
 
-        by_date: dict[str, list] = {}
-        for ts, val in combined.items():
-            if pd.isna(val):
-                continue
-            by_date.setdefault(ts.strftime("%Y-%m-%d"), []).append(round(float(val), 1))
-
-        sorted_dates = sorted(by_date.items())
-        # Last 7 complete days + today's partial data so the overlay
-        # connects to the start of the 168h gen/load forecast.
-        complete = [
-            {"date": d, "values": vs}
-            for d, vs in sorted_dates
-            if len(vs) == 24
-        ][-7:]
-        # Append today's partial data if not already included as a complete day
-        if sorted_dates:
-            last_date, last_vals = sorted_dates[-1]
-            if last_vals and len(last_vals) < 24 and (not complete or complete[-1]["date"] != last_date):
-                complete.append({"date": last_date, "values": last_vals})
-
+        complete = _series_to_days(combined)
         if complete:
             result[target] = {"days": complete}
+
+    # gen_load_diff actuals = load − wind_onshore − wind_offshore − solar
+    # Represents dispatchable/other generation; may be negative during high renewables.
+    _renewables = ["wind_onshore", "wind_offshore", "solar"]
+    if "load" in _berlin_combined and all(t in _berlin_combined for t in _renewables):
+        ref = _berlin_combined["load"]
+        gld = ref.copy()
+        for t in _renewables:
+            gld = gld.sub(_berlin_combined[t].reindex(ref.index, fill_value=0))
+        complete = _series_to_days(gld)
+        if complete:
+            result["gen_load_diff"] = {"days": complete}
 
     if result:
         DEPLOY_DATA_DIR.mkdir(parents=True, exist_ok=True)
