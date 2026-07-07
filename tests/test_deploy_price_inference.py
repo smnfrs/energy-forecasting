@@ -35,6 +35,23 @@ def test_extend_uses_requested_delivery_date_not_last_merged_date():
     assert extended.index[-1] == pd.Timestamp("2026-07-07 23:00")
 
 
+def test_extend_targets_earlier_date_when_merged_already_has_d2():
+    """merged.parquet may already contain D+2 rows (prices published early),
+    but forecast_date should still anchor to the explicitly requested date."""
+    # Frame covers Jul 6, 7, 8 — merged already has Jul 8 data.
+    df = _merged_frame(start="2026-07-06 00:00", hours=72)
+
+    extended, forecast_idx = pi._extend_to_forecast_date(df, forecast_date=date(2026, 7, 7))
+
+    assert forecast_idx[0] == pd.Timestamp("2026-07-07 00:00")
+    assert forecast_idx[-1] == pd.Timestamp("2026-07-07 23:00")
+    assert len(forecast_idx) == 24
+    # Target price must be masked for the delivery date regardless of pre-existing values.
+    assert extended.loc[forecast_idx, "target_price"].isna().all()
+    # Features must still be present.
+    assert extended.loc[forecast_idx, "prog_load"].notna().all()
+
+
 def test_extend_masks_existing_delivery_target_values():
     df = _merged_frame(start="2026-07-05 00:00", hours=72)
 
