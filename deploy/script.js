@@ -85,6 +85,7 @@
         lower: e.forecasts.slice(0, 24).map(f => f.forecast_lower ?? null),
         upper: e.forecasts.slice(0, 24).map(f => f.forecast_upper ?? null),
         timestamps: e.forecasts.slice(0, 24).map(f => f.timestamp),
+        model_forecasts: e.model_forecasts || null,
       }));
 
     const byDate = new Map();
@@ -251,14 +252,18 @@
 
     const traces = [];
     if (hasCI) {
-      // CI band: lower bound trace then fill-to-next upper
+      // CI band: invisible lower boundary, then fill-to-next upper.
+      // mode:"lines" + line.width:0 is the correct Plotly pattern for invisible
+      // boundary traces — mode:"none" can cause tonexty fill to silently fail.
       traces.push({
-        x: xs, y: lowerYs, type: "scatter", mode: "none",
+        x: xs, y: lowerYs, type: "scatter", mode: "lines",
+        line: { width: 0 }, fill: "none",
         showlegend: false, hoverinfo: "skip",
       });
       traces.push({
-        x: xs, y: upperYs, type: "scatter", mode: "none",
-        fill: "tonexty", fillcolor: "rgba(150,150,150,0.18)",
+        x: xs, y: upperYs, type: "scatter", mode: "lines",
+        line: { width: 0 },
+        fill: "tonexty", fillcolor: "rgba(150,150,150,0.25)",
         name: `${t("pi_band")} (90%)`, hoverinfo: "skip",
       });
     }
@@ -352,8 +357,10 @@
     const xs = [], ys = [];
     for (const day of (glActuals[target].days || [])) {
       for (let h = 0; h < day.values.length; h++) {
+        const v = day.values[h];
+        if (v == null) continue; // skip missing hours (not yet published)
         xs.push(`${day.date}T${String(h).padStart(2, "0")}:00:00`);
-        ys.push(day.values[h]);
+        ys.push(v);
       }
     }
     return { xs, ys };
@@ -370,37 +377,39 @@
     const traces = [];
 
     // ── Actual generation stacked area (solid fill) ──
-    // Each target's actual values are stacked on top of the previous.
     const actualGenSeries = [
       { target: "wind_onshore",  name: `${t("wind_onshore")} (${t("actual")})`,  color: "#2266CC" },
       { target: "wind_offshore", name: `${t("wind_offshore")} (${t("actual")})`, color: "#44AADD" },
       { target: "solar",         name: `${t("solar")} (${t("actual")})`,         color: "#DDAA00" },
+      { target: "gen_load_diff", name: `${t("other_gen")} (${t("actual")})`,     color: "#8899AA" },
     ];
-    for (const [i, s] of actualGenSeries.entries()) {
+    let actualStackCount = 0;
+    for (const s of actualGenSeries) {
       const { xs, ys } = buildActualSeries(glActuals, s.target);
       if (!xs.length) continue;
       traces.push({
         x: xs, y: ys, type: "scatter", mode: "lines",
         name: s.name,
         stackgroup: "gen_actual",
-        fill: i === 0 ? "tozeroy" : "tonexty",
-        fillcolor: colorWithAlpha(s.color, 0.7),
+        fill: actualStackCount === 0 ? "tozeroy" : "tonexty",
+        fillcolor: colorWithAlpha(s.color, 0.65),
         line: { color: s.color, width: 1 },
       });
+      actualStackCount++;
     }
 
     // ── Forecast generation: cumulative boundary dotted lines ──
-    // Manually accumulate so lines trace the stacked tops without fill.
+    // Manually accumulate so lines trace the stacked tops without stackgroup fill.
     const fcSeries = [
       { data: wo,   name: `${t("wind_onshore")} (${t("forecast")})`,  color: "#2266CC" },
       { data: woff, name: `${t("wind_offshore")} (${t("forecast")})`, color: "#44AADD" },
       { data: sol,  name: `${t("solar")} (${t("forecast")})`,         color: "#DDAA00" },
+      { data: gld,  name: `${t("other_gen")} (${t("forecast")})`,     color: "#8899AA" },
     ].filter(s => s.data);
 
     if (fcSeries.length) {
-      // Build timestamp → value maps for each component
-      const maps = fcSeries.map(s => new Map(s.data.forecasts.map(f => [f.timestamp, f.forecast])));
       const timestamps = fcSeries[0].data.forecasts.map(f => f.timestamp);
+      const maps = fcSeries.map(s => new Map(s.data.forecasts.map(f => [f.timestamp, f.forecast])));
 
       let cumYs = new Array(timestamps.length).fill(0);
       for (let i = 0; i < fcSeries.length; i++) {
@@ -410,29 +419,31 @@
           type: "scatter", mode: "lines",
           name: fcSeries[i].name,
           line: { color: fcSeries[i].color, width: 1.5, dash: "dot" },
-          showlegend: true,
         });
       }
     }
 
     // ── Load actual (solid red line, y2) ──
-    if (glActuals && glActuals.load) {
-      const { xs, ys } = buildActualSeries(glActuals, "load");
-      if (xs.length) {
-        traces.push({
-          x: xs, y: ys, type: "scatter", mode: "lines",
-          name: `${t("load")} (${t("actual")})`,
-          yaxis: "y2",
-          line: { color: "#EE0000", width: 2.5 },
-        });
-      }
+    const loadActual = buildActualSeries(glActuals, "load");
+    if (loadActual.xs.length) {
+      traces.push({
+        x: loadActual.xs, y: loadActual.ys, type: "scatter", mode: "lines",
+        name: `${t("load")} (${t("actual")})`,
+        yaxis: "y2",
+        line: { color: "#EE0000", width: 2.5 },
+      });
     }
 
     // ── Load forecast (dashed red line, y2) ──
+    // Prepend the last actual point so the forecast line connects smoothly.
     if (load) {
+      const fcXs = load.forecasts.map(f => f.timestamp);
+      const fcYs = load.forecasts.map(f => f.forecast);
+      const lastActX = loadActual.xs[loadActual.xs.length - 1];
+      const lastActY = loadActual.ys[loadActual.ys.length - 1];
       traces.push({
-        x: load.forecasts.map(f => f.timestamp),
-        y: load.forecasts.map(f => f.forecast),
+        x: lastActX != null ? [lastActX, ...fcXs] : fcXs,
+        y: lastActY != null ? [lastActY, ...fcYs] : fcYs,
         type: "scatter", mode: "lines",
         name: `${t("load")} (${t("forecast")})`,
         yaxis: "y2",
@@ -479,12 +490,14 @@
       const startIdx = traces.length;
       if (hasPI) {
         traces.push({
-          x: ts, y: lower, type: "scatter", mode: "none",
-          fill: "none", showlegend: false, hoverinfo: "skip", visible: true,
+          x: ts, y: lower, type: "scatter", mode: "lines",
+          line: { width: 0 }, fill: "none",
+          showlegend: false, hoverinfo: "skip", visible: true,
         });
         traces.push({
-          x: ts, y: upper, type: "scatter", mode: "none",
-          fill: "tonexty", fillcolor: "rgba(130,130,130,0.18)",
+          x: ts, y: upper, type: "scatter", mode: "lines",
+          line: { width: 0 },
+          fill: "tonexty", fillcolor: "rgba(130,130,130,0.25)",
           name: t("pi_band"), showlegend: true, hoverinfo: "skip", visible: true,
         });
       }
@@ -549,6 +562,10 @@
     if (xRange) layout.xaxis.range = xRange;
 
     Plotly.newPlot(chartDiv, traces, layout, { responsive: true, displayModeBar: false });
+    // Force layout recalculation after <details> animation completes — without
+    // this, Plotly may capture zero dimensions if the container is still
+    // transitioning when the plot is first created.
+    requestAnimationFrame(() => Plotly.Plots.resize(chartDiv));
 
     controls.querySelectorAll("input[type=checkbox]").forEach(cb => {
       cb.addEventListener("change", () => {
@@ -577,6 +594,9 @@
         el.removeEventListener("toggle", onFirst);
         const files = cfg.tsos.map(tso => `${DATA}gen_load/${cfg.target}_${tso}.json`);
         const dataArr = await Promise.all(files.map(fetchJSON));
+        // Yield to the browser so the newly-open <details> is fully laid out
+        // before Plotly measures the container width.
+        await new Promise(resolve => requestAnimationFrame(resolve));
         renderGenLoadCard(el.querySelector(".chart-container"), cfg, dataArr, glActuals);
       });
     }
@@ -584,18 +604,106 @@
 
   // ── Monitoring tab ────────────────────────────────────────────────────────
 
+  // Short model display name: strip feature-set suffix and sklearn class suffixes
+  const shortModelName = n => n.replace(/__fs_.*$/, "").replace("Regressor", "").replace("Classifier", "");
+
   function renderMonitoringTab() {
-    renderModelMaeChart(_allData.metadata);
-    renderErrorTrend(_allData.summary);
+    renderModelMaeChart(_allData.actuals, _allData.history, _allData.metadata);
+    renderErrorTrend(_allData.metadata);
     renderHourlyErrorProfile(_allData.actuals, _allData.history);
     renderCompositionChart(_allData.metadata);
     renderGenLoadErrors(_allData.glErrors);
     renderRetrainLog(_allData.retrainHistory);
   }
 
-  // Per-model CV MAE bar chart (replaces ensemble-only trend as first chart)
-  function renderModelMaeChart(metadata) {
+  // Chart 1: per-model daily MAE line chart (computed client-side from history + actuals).
+  // Ensemble line is always shown; per-model lines appear once model_forecasts
+  // accumulate in forecast_history.json (production runs + backfill).
+  function renderModelMaeChart(actuals, history, metadata) {
     const el = document.getElementById("model-mae-chart");
+    if (!el) return;
+    if (!actuals || !history || !history.length) { noDataInline(el); return; }
+
+    const actualsMap = {};
+    for (const day of (actuals.days || [])) {
+      if (day.prices && day.prices.length === 24) actualsMap[day.date] = day.prices;
+    }
+
+    const matched = history
+      .filter(e => actualsMap[e.date] && e.prices && e.prices.length === 24)
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    if (!matched.length) { noDataInline(el); return; }
+
+    const dates = matched.map(e => e.date);
+    const mae24 = (preds, act) =>
+      Math.round(preds.reduce((s, p, i) => s + Math.abs(p - act[i]), 0) / 24 * 100) / 100;
+
+    // Collect all model names seen across history
+    const modelNames = [...new Set(
+      matched.flatMap(e => Object.keys(e.model_forecasts || {}))
+    )];
+
+    const traces = [];
+
+    // Per-model lines
+    const modelsByName = Object.fromEntries((metadata?.models || []).map(m => [m.name, m]));
+    for (const modelName of modelNames) {
+      const maes = matched.map(e => {
+        const mf = e.model_forecasts?.[modelName];
+        if (!mf || mf.length < 24) return null;
+        return mae24(mf, actualsMap[e.date]);
+      });
+      const cat = modelsByName[modelName]?.category || "";
+      traces.push({
+        x: dates, y: maes,
+        type: "scatter", mode: "lines+markers",
+        name: shortModelName(modelName),
+        line: { color: CATEGORY_COLORS[cat] || "#aaa", width: 1.5 },
+        marker: { size: 4 },
+        connectgaps: false,
+      });
+    }
+
+    // Ensemble line (always available from entry.prices)
+    const ensembleMaes = matched.map(e => mae24(e.prices, actualsMap[e.date]));
+    traces.push({
+      x: dates, y: ensembleMaes,
+      type: "scatter", mode: "lines+markers",
+      name: "Ensemble",
+      line: { color: "#111111", width: 2.5, dash: "dash" },
+      marker: { size: 5, symbol: "diamond" },
+    });
+
+    const shapes = [], annotations = [];
+    if (metadata?.holdout_mae) {
+      shapes.push({
+        type: "line", xref: "paper", yref: "y",
+        x0: 0, x1: 1,
+        y0: metadata.holdout_mae, y1: metadata.holdout_mae,
+        line: { color: "#888", width: 1, dash: "dot" },
+      });
+      annotations.push({
+        xref: "paper", yref: "y",
+        x: 1, y: metadata.holdout_mae,
+        text: `Holdout: ${metadata.holdout_mae.toFixed(2)}`,
+        showarrow: false, xanchor: "right", font: { size: 10, color: "#888" },
+      });
+    }
+
+    Plotly.newPlot(el, traces, {
+      xaxis: { type: "date", title: "" },
+      yaxis: { title: "MAE (EUR/MWh)", rangemode: "tozero" },
+      legend: { orientation: "h", y: -0.22 },
+      margin: { t: 20, r: 20, b: 80, l: 65 },
+      height: 280,
+      shapes, annotations,
+    }, { responsive: true, displayModeBar: false });
+  }
+
+  // Chart 2: per-model CV MAE horizontal bar chart with ensemble holdout reference.
+  function renderErrorTrend(metadata) {
+    const el = document.getElementById("error-trend-chart");
     if (!el) return;
     if (!metadata || !metadata.models || !metadata.models.length) {
       noDataInline(el); return;
@@ -607,12 +715,9 @@
 
     if (!models.length) { noDataInline(el); return; }
 
-    // Short display names
-    const shortName = name => name.replace(/__fs_.*$/, "").replace("Regressor", "").replace("Classifier", "");
-
     Plotly.newPlot(el, [{
       x: models.map(m => m.cv_mae),
-      y: models.map(m => shortName(m.name)),
+      y: models.map(m => shortModelName(m.name)),
       type: "bar",
       orientation: "h",
       marker: { color: models.map(m => CATEGORY_COLORS[m.category] || "#6c757d") },
@@ -635,35 +740,6 @@
         text: `Ensemble holdout: ${metadata.holdout_mae?.toFixed(2)}`,
         showarrow: false, xanchor: "left", font: { size: 11 },
       }],
-    }, { responsive: true, displayModeBar: false });
-  }
-
-  function renderErrorTrend(summary) {
-    const el = document.getElementById("error-trend-chart");
-    if (!summary || !summary.dates || !summary.dates.length) {
-      noDataInline(el); return;
-    }
-    Plotly.newPlot(el, [
-      {
-        x: summary.dates, y: summary.mae,
-        type: "scatter", mode: "lines+markers",
-        name: `${t("mae")} (ensemble)`,
-        line: { color: "#3B82F6", width: 2 },
-        marker: { size: 4 },
-      },
-      {
-        x: summary.dates, y: summary.rmse,
-        type: "scatter", mode: "lines+markers",
-        name: `${t("rmse")} (ensemble)`,
-        line: { color: "#ef4444", width: 2, dash: "dash" },
-        marker: { size: 4 },
-      },
-    ], {
-      xaxis: { type: "date", title: "" },
-      yaxis: { title: "EUR/MWh" },
-      legend: { orientation: "h", y: -0.2 },
-      margin: { t: 20, r: 20, b: 60, l: 65 },
-      height: 260,
     }, { responsive: true, displayModeBar: false });
   }
 

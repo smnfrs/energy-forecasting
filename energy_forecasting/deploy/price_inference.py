@@ -229,6 +229,7 @@ def run_price_inference(
     weights = ensemble_config["ensemble"]["weights"]
     predictions: list[np.ndarray] = []
     used_weights: list[float] = []
+    model_predictions: dict[str, list[float]] = {}
 
     for model_name, entry in model_entries.items():
         fv = entry["feature_version"]
@@ -252,6 +253,7 @@ def run_price_inference(
         except Exception as exc:
             raise RuntimeError(f"Failed prediction for production model {model_name}") from exc
 
+        model_predictions[model_name] = y_pred.tolist()
         predictions.append(y_pred)
         used_weights.append(weights[model_name])
         logger.debug(
@@ -285,6 +287,7 @@ def run_price_inference(
         },
         index=d1_index,
     )
+    result.attrs["model_predictions"] = model_predictions
     logger.info(
         f"Price inference complete: {len(result)} hours, "
         f"mean={y_blend.mean():.1f} EUR/MWh, "

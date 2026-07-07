@@ -297,8 +297,11 @@ def test_write_gen_load_actuals_writes_file(tmp_path, monkeypatch):
     assert "wind_onshore" in data
     assert "load" in data
     days = data["wind_onshore"]["days"]
-    assert len(days) <= 7
-    assert all(len(d["values"]) == 24 for d in days)
+    # 7 complete days + optionally 1 partial "today" entry (the partial entry
+    # connects the actuals overlay to the start of the gen/load forecast line).
+    assert len(days) <= 8
+    complete_days = [d for d in days if len(d["values"]) == 24]
+    assert len(complete_days) <= 7
 
 
 def test_write_gen_load_actuals_missing_tso_dir(tmp_path, monkeypatch):

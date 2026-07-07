@@ -26,6 +26,9 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+
+_BERLIN_TZ = ZoneInfo("Europe/Berlin")
 
 import numpy as np
 import pandas as pd
@@ -71,8 +74,16 @@ _GEN_LOAD_DISPLAY_TARGETS = {"wind_onshore", "wind_offshore", "solar", "load"}
 
 
 def _ts(dt) -> str:
-    """Format a timestamp as ISO 8601 string."""
+    """Format a timestamp as tz-naive ISO 8601 in Europe/Berlin local time.
+
+    Gen/load forecast DataFrames use UTC-aware timestamps (from TSO parquets).
+    Converting to Berlin local before stripping tz ensures timestamps in all
+    JSON outputs represent delivery hours in German local time, matching the
+    actuals format used by write_gen_load_actuals.
+    """
     if isinstance(dt, pd.Timestamp):
+        if dt.tzinfo is not None:
+            dt = dt.tz_convert(_BERLIN_TZ).tz_localize(None)
         return dt.isoformat()
     return str(dt)
 
@@ -126,14 +137,18 @@ def write_price_forecast(price_df: pd.DataFrame, issued_at: str | None = None) -
 
 def _append_price_history(price_df: pd.DataFrame, issued_at: str) -> None:
     """Append today's price forecast to forecast_history.json (rolling 30d)."""
-    entry = {
+    entry: dict = {
         "target": "price",
         "region": "DE_LU",
         "issued_at": issued_at,
+        "source": "production",
         "horizon_hours": len(price_df),
         "unit": "EUR/MWh",
         "forecasts": _hourly_entries(price_df),
     }
+    model_forecasts = price_df.attrs.get("model_predictions", None)
+    if model_forecasts:
+        entry["model_forecasts"] = model_forecasts
 
     if HISTORY_PATH.exists():
         history = json.loads(HISTORY_PATH.read_text())
@@ -352,13 +367,16 @@ def write_gen_load_actuals() -> None:
         # Outer join and sum — missing TSO-hours contribute 0
         combined = pd.concat(series_list, axis=1).sum(axis=1, min_count=1)
 
-        # Convert to UTC for consistent date grouping
+        # Convert to Berlin local time for delivery-hour date grouping.
+        # TSO parquets are UTC; tz-naive parquets are also assumed UTC.
+        # Using Berlin local ensures date boundaries match delivery-hour convention
+        # and align with the forecast timestamps written by _ts().
         idx = combined.index
-        if hasattr(idx, "tz") and idx.tz is not None:
-            idx = idx.tz_convert("UTC")
-        else:
-            idx = idx.tz_localize("UTC")
-        combined.index = idx
+        combined.index = (
+            idx.tz_convert("Europe/Berlin").tz_localize(None)
+            if idx.tz is not None
+            else idx.tz_localize("UTC").tz_convert("Europe/Berlin").tz_localize(None)
+        )
 
         by_date: dict[str, list] = {}
         for ts, val in combined.items():
@@ -647,6 +665,7 @@ def backfill_price_history_from_model(n_days: int = 60) -> int:
 
         preds: list[np.ndarray] = []
         w_used: list[float] = []
+        model_preds_by_name: dict[str, list[float]] = {}
         skip = False
         for name, (model, scaler, fv) in loaded.items():
             cols = version_cols.get(fv, [])
@@ -664,6 +683,7 @@ def backfill_price_history_from_model(n_days: int = 60) -> int:
             X_arr = scaler.transform(X) if scaler is not None else X.values
             try:
                 y = np.asarray(model.predict(X_arr))
+                model_preds_by_name[name] = y.tolist()
                 preds.append(y)
                 w_used.append(weights[name])
             except Exception:
@@ -679,7 +699,7 @@ def backfill_price_history_from_model(n_days: int = 60) -> int:
         issued_at = (
             pd.Timestamp(delivery_date) - pd.Timedelta(days=1)
         ).strftime("%Y-%m-%dT08:00:00Z")
-        new_entries.append({
+        new_entry: dict = {
             "target": "price",
             "region": "DE_LU",
             "issued_at": issued_at,
@@ -690,7 +710,10 @@ def backfill_price_history_from_model(n_days: int = 60) -> int:
                 {"timestamp": f"{delivery_date}T{h:02d}:00:00", "forecast": round(float(y_blend[h]), 3)}
                 for h in range(24)
             ],
-        })
+        }
+        if model_preds_by_name:
+            new_entry["model_forecasts"] = model_preds_by_name
+        new_entries.append(new_entry)
 
     if not new_entries:
         logger.info("backfill_price_history_from_model: no entries generated (feature gaps or model errors)")
