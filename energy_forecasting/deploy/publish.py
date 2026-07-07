@@ -756,12 +756,21 @@ def backfill_errors() -> None:
         if len(fc) < 24:
             continue
         # Match by delivery date (first forecast timestamp), not issued_at date.
-        # The pipeline may forecast D+1 (08:00 UTC runs) or D+2 (runs after noon),
-        # so issued_at[:10] != delivery date in the common case.
+        # Standard runs forecast D+1, so issued_at[:10] differs from delivery date.
         delivery_date = fc[0]["timestamp"][:10]
         error_path = ERRORS_DIR / f"{delivery_date}.json"
+        source = entry.get("source", "production")
+        issued_at = entry.get("issued_at")
         if error_path.exists():
-            continue
+            try:
+                existing = json.loads(error_path.read_text())
+            except json.JSONDecodeError:
+                existing = {}
+            if (
+                existing.get("source") == source
+                and existing.get("issued_at") == issued_at
+            ):
+                continue
 
         day_actuals = actuals[actuals.index.normalize().astype(str) == delivery_date]
         if len(day_actuals) < 24:
@@ -772,6 +781,12 @@ def backfill_errors() -> None:
         mae = float(np.mean(np.abs(y_true - y_pred)))
         rmse = float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
 
-        payload = {"date": delivery_date, "mae": round(mae, 3), "rmse": round(rmse, 3)}
+        payload = {
+            "date": delivery_date,
+            "mae": round(mae, 3),
+            "rmse": round(rmse, 3),
+            "source": source,
+            "issued_at": issued_at,
+        }
         error_path.write_text(json.dumps(payload, indent=2))
         logger.info(f"Backfilled error for {delivery_date}: MAE={mae:.2f}, RMSE={rmse:.2f}")

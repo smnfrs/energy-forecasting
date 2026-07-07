@@ -17,14 +17,16 @@ indexed by D+1 delivery hour timestamps (local time, tz-naive to match merged.pa
 
 from __future__ import annotations
 
-from datetime import timedelta
+import json
+from datetime import date, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
 from loguru import logger
 
-from energy_forecasting.config import PROCESSED_DATA_DIR
+from energy_forecasting.config import MODELS_DIR, PROCESSED_DATA_DIR
 from energy_forecasting.deploy.model_store import (
     load_ensemble_config,
     load_price_model,
@@ -34,37 +36,55 @@ from energy_forecasting.deploy.model_store import (
 
 _WEIGHT_THRESHOLD = 1e-10
 PRICE_TARGET = "target_price"
+LOCAL_TZ = ZoneInfo("Europe/Berlin")
 
 
-def _extend_to_forecast_date(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DatetimeIndex]:
-    """Append 24 rows for D+1 delivery hours to the merged dataset.
+def _default_delivery_date(now: datetime | None = None) -> date:
+    """Return the next Berlin delivery date for the daily price forecast."""
+    current = now or datetime.now(LOCAL_TZ)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=LOCAL_TZ)
+    else:
+        current = current.astimezone(LOCAL_TZ)
+    return current.date() + timedelta(days=1)
+
+
+def _extend_to_forecast_date(
+    df: pd.DataFrame,
+    forecast_date: date | None = None,
+) -> tuple[pd.DataFrame, pd.DatetimeIndex]:
+    """Ensure 24 delivery-hour rows exist for the requested forecast date.
 
     The merged dataset is in tz-naive local time (Europe/Berlin delivery hours).
-    Tomorrow's delivery hours 0-23 are the rows we need predictions for.
+    Tomorrow's delivery hours 0-23 are the rows we need predictions for by
+    default. The date is based on Berlin wall-clock time, not on the last row in
+    merged.parquet: after the market clears, merged data may already contain
+    tomorrow's target prices, but the daily forecast should still be D+1.
+
     Features are forward-filled from the last known values; the price target
     column is left as NaN (unknown — this is what we're predicting).
 
-    Returns (extended_df, d1_index) where d1_index identifies the new rows.
+    Returns (extended_df, forecast_index) where forecast_index identifies the
+    24 delivery rows.
     """
-    last_date = df.index[-1].date()
-    forecast_date = last_date + timedelta(days=1)
+    forecast_date = forecast_date or _default_delivery_date()
 
-    # Check if D+1 rows are already present (e.g., a partial update)
     d1_start = pd.Timestamp(f"{forecast_date} 00:00")
     d1_end = pd.Timestamp(f"{forecast_date} 23:00")
     existing_d1 = df.loc[d1_start:d1_end]
-    if len(existing_d1) == 24:
-        logger.info(f"D+1 rows already present in merged data for {forecast_date}")
-        return df, existing_d1.index
-
     new_idx = pd.date_range(
         start=d1_start,
         end=d1_end,
         freq="h",
     )
-    new_rows = pd.DataFrame(np.nan, index=new_idx, columns=df.columns)
 
-    extended = pd.concat([df, new_rows])
+    if len(existing_d1) == 24:
+        extended = df.copy()
+        logger.info(f"Delivery rows already present in merged data for {forecast_date}")
+    else:
+        new_rows = pd.DataFrame(np.nan, index=new_idx, columns=df.columns)
+        extended = pd.concat([df, new_rows])
+
     extended = extended[~extended.index.duplicated(keep="last")]
 
     # Forward-fill all feature columns for D+1 rows.
@@ -78,8 +98,13 @@ def _extend_to_forecast_date(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Datetim
     # if 'target_price__target' is used.
     feature_cols = [c for c in extended.columns if c != PRICE_TARGET]
     extended[feature_cols] = extended[feature_cols].ffill()
+    if PRICE_TARGET in extended.columns:
+        extended.loc[new_idx, PRICE_TARGET] = np.nan
 
-    logger.info(f"Extended merged dataset to {forecast_date}: {len(df)} → {len(extended)} rows")
+    logger.info(
+        f"Prepared merged dataset for delivery date {forecast_date}: "
+        f"{len(df)} → {len(extended)} rows"
+    )
     return extended, new_idx
 
 
@@ -102,33 +127,38 @@ def _build_feature_matrices(
 
     Returns dict of {feature_version: X_d1} where X_d1 is a 24-row DataFrame.
     """
-    from energy_forecasting.modeling.datasets import find_dataset
-
     result: dict[str, pd.DataFrame] = {}
     for fv in feature_versions:
         ds_name = _feature_version_to_ds_name(fv)
-        # Reuse an existing dataset if it's up-to-date (same number of rows)
-        existing = find_dataset(ds_name)
-        if existing:
-            existing_df = pd.read_parquet(existing)
-            # If the dataset already covers the D+1 timestamps, slice directly
-            feature_cols = [c for c in existing_df.columns if not c.endswith("__target")]
-            if d1_index[-1] in existing_df.index and d1_index[0] in existing_df.index:
-                X_d1 = existing_df.loc[d1_index, feature_cols]
-                if not X_d1.isna().any(axis=None):
-                    logger.info(f"Reusing existing dataset {ds_name} for D+1 features")
-                    result[fv] = X_d1
-                    continue
-
-        # Fall back to building features from the extended merged dataset.
-        # We need the feature list for this version — look it up from the datasets dir
-        # or re-engineer from the full config.
-        try:
-            result[fv] = _engineer_features_for_version(extended_df, d1_index, fv, ds_name)
-        except Exception:
-            logger.exception(f"Failed to build features for {fv}")
+        result[fv] = _engineer_features_for_version(extended_df, d1_index, fv, ds_name)
 
     return result
+
+
+def _trained_feature_columns(feature_version: str, ds_name: str) -> list[str]:
+    """Load the exact feature columns used by a trained price model."""
+    from energy_forecasting.modeling.datasets import DATASET_DIR
+
+    ds_path = DATASET_DIR / f"{ds_name}.parquet"
+    if ds_path.exists():
+        try:
+            import pyarrow.parquet as pq
+
+            names = pq.read_schema(ds_path).names
+        except Exception:
+            names = list(pd.read_parquet(ds_path).columns)
+        return [c for c in names if not c.endswith("__target") and c != "__index_level_0__"]
+
+    cols_path = MODELS_DIR / "price_feature_cols.json"
+    if cols_path.exists():
+        all_cols = json.loads(cols_path.read_text())
+        if feature_version in all_cols:
+            return [c for c in all_cols[feature_version] if c != "__index_level_0__"]
+
+    raise FileNotFoundError(
+        f"No trained feature-column list found for {feature_version}. "
+        f"Expected {ds_path} or {cols_path}."
+    )
 
 
 def _engineer_features_for_version(
@@ -138,51 +168,23 @@ def _engineer_features_for_version(
     ds_name: str,
 ) -> pd.DataFrame:
     """Build price feature matrix for one feature_version and return D+1 rows."""
-    from energy_forecasting.modeling.datasets import DATASET_DIR
-
-    # Load the feature list from the existing dataset columns (most reliable)
-    ds_path = DATASET_DIR / f"{ds_name}.parquet"
-    if ds_path.exists():
-        existing = pd.read_parquet(ds_path)
-        feature_cols = [c for c in existing.columns if not c.endswith("__target")]
-        # Use extend_features to add the new D+1 rows efficiently
-        # We need the feature list — recover from the existing dataset columns
-        # by matching against the known feature DSL. Since we can't reconstruct the
-        # exact DSL strings, we use the columns directly as a pass-through.
-        # The extended merged data contains the raw columns; engineer_features
-        # re-derives the feature columns.
-        # Try the most reliable path: use the full dataset
-        from energy_forecasting.config.features import (
-            PRICE_FEATURES_MAX,
-        )
-
-        # Map feature_version back to feature list
-        # feature_version names from stage 5c: fs_shap_top90, fs_rfecv_optimum, etc.
-        # These are sub-datasets of MAX. The columns in the existing dataset
-        # ARE the feature list for this version.
-        from energy_forecasting.features.engine import engineer_features as _eng
-
-        # Build full feature matrix and then select only the columns in this version
-        full_features = _eng(extended_df, PRICE_FEATURES_MAX, validate=False)
-        # Keep only columns that exist in this version's dataset
-        available = [c for c in feature_cols if c in full_features.columns]
-        X_all = full_features[available]
-        X_d1 = X_all.reindex(d1_index)
-        logger.info(
-            f"Built {feature_version} features: {len(available)} columns, "
-            f"{X_d1.notna().all(axis=1).sum()}/{len(X_d1)} complete D+1 rows"
-        )
-        return X_d1
-
-    # No existing dataset — build from scratch using MAX features as proxy
     from energy_forecasting.config.features import PRICE_FEATURES_MAX
     from energy_forecasting.features.engine import engineer_features as _eng
 
+    feature_cols = _trained_feature_columns(feature_version, ds_name)
     full_features = _eng(extended_df, PRICE_FEATURES_MAX, validate=False)
-    X_d1 = full_features.reindex(d1_index)
-    logger.warning(
-        f"No existing dataset for {feature_version}; using MAX features as proxy "
-        f"({len(full_features.columns)} columns)"
+    missing = [c for c in feature_cols if c not in full_features.columns]
+    if missing:
+        raise KeyError(
+            f"{feature_version}: {len(missing)} trained feature column(s) were not "
+            f"recomputed for inference: {missing[:10]}"
+        )
+
+    X_all = full_features[feature_cols]
+    X_d1 = X_all.reindex(d1_index)
+    logger.info(
+        f"Built {feature_version} features: {len(feature_cols)} columns, "
+        f"{X_d1.notna().all(axis=1).sum()}/{len(X_d1)} complete D+1 rows"
     )
     return X_d1
 
@@ -190,6 +192,7 @@ def _engineer_features_for_version(
 def run_price_inference(
     merged_path: Path | None = None,
     ensemble_config: dict | None = None,
+    forecast_date: date | None = None,
 ) -> pd.DataFrame:
     """Produce a 24h D+1 price forecast using the production SLSQP ensemble.
 
@@ -209,12 +212,14 @@ def run_price_inference(
 
     df = _overlay_ema_forecasts(df)
 
-    # Extend to D+1
-    extended_df, d1_index = _extend_to_forecast_date(df)
+    # Extend to the intended D+1 delivery date.
+    extended_df, d1_index = _extend_to_forecast_date(df, forecast_date=forecast_date)
 
     # Identify which feature_versions are needed (non-zero-weight models only)
     prod_names = set(production_model_names(ensemble_config))
     model_entries = {e["name"]: e for e in ensemble_config["models"] if e["name"] in prod_names}
+    if not model_entries:
+        raise RuntimeError("No production price models configured")
     feature_versions_needed = {e["feature_version"] for e in model_entries.values()}
 
     # Build feature matrices
@@ -228,14 +233,15 @@ def run_price_inference(
     for model_name, entry in model_entries.items():
         fv = entry["feature_version"]
         if fv not in feature_matrices:
-            logger.warning(f"No feature matrix for {model_name} ({fv}), skipping")
-            continue
+            raise RuntimeError(f"No feature matrix for production model {model_name} ({fv})")
 
         X_d1 = feature_matrices[fv]
         if X_d1.isna().any(axis=None):
-            n_bad = X_d1.isna().any(axis=1).sum()
-            logger.warning(
-                f"{model_name}: {n_bad}/{len(X_d1)} rows have NaN features; may degrade prediction"
+            bad_cols = X_d1.columns[X_d1.isna().any()].tolist()
+            n_bad = int(X_d1.isna().any(axis=1).sum())
+            raise RuntimeError(
+                f"{model_name}: {n_bad}/{len(X_d1)} forecast rows have NaN features; "
+                f"first bad columns: {bad_cols[:10]}"
             )
 
         try:
@@ -243,19 +249,22 @@ def run_price_inference(
             scaler = load_price_model_scaler(entry["run_id"])
             X_to_predict = scaler.transform(X_d1) if scaler is not None else X_d1
             y_pred = np.asarray(model.predict(X_to_predict))
-            predictions.append(y_pred)
-            used_weights.append(weights[model_name])
-            logger.debug(
-                f"  {model_name}: mean={y_pred.mean():.1f} EUR/MWh "
-                f"(weight={weights[model_name]:.3f})"
-            )
-        except Exception:
-            logger.exception(f"Failed prediction for {model_name}")
+        except Exception as exc:
+            raise RuntimeError(f"Failed prediction for production model {model_name}") from exc
 
-    if not predictions:
-        raise RuntimeError("No price model predictions succeeded; cannot produce forecast")
+        predictions.append(y_pred)
+        used_weights.append(weights[model_name])
+        logger.debug(
+            f"  {model_name}: mean={y_pred.mean():.1f} EUR/MWh "
+            f"(weight={weights[model_name]:.3f})"
+        )
 
-    # Normalize weights in case any models were skipped
+    if len(predictions) != len(model_entries):
+        raise RuntimeError(
+            f"Only {len(predictions)}/{len(model_entries)} production price models produced predictions"
+        )
+
+    # Normalize configured production weights. All production models must have succeeded.
     w = np.array(used_weights)
     w = w / w.sum()
 

@@ -95,12 +95,15 @@ def test_history_appends_and_trims(tmp_path, monkeypatch):
     monkeypatch.setattr(pub, "HISTORY_PATH", tmp_path / "forecast_history.json")
     monkeypatch.setattr(pub, "HISTORY_DAYS", 3)
 
-    price_df = _price_df()
-    pub._append_price_history(price_df, "2026-06-28T08:00:00Z")
-    pub._append_price_history(price_df, "2026-06-29T08:00:00Z")
-    pub._append_price_history(price_df, "2026-06-30T08:00:00Z")
-    # Add one more to trigger trim
-    pub._append_price_history(price_df, "2026-07-01T08:00:00Z")
+    for i, issued_at in enumerate([
+        "2026-06-28T08:00:00Z",
+        "2026-06-29T08:00:00Z",
+        "2026-06-30T08:00:00Z",
+        "2026-07-01T08:00:00Z",
+    ]):
+        price_df = _price_df()
+        price_df.index = price_df.index + pd.Timedelta(days=i)
+        pub._append_price_history(price_df, issued_at)
 
     history = json.loads((tmp_path / "forecast_history.json").read_text())
     assert history["count"] == 3  # trimmed to HISTORY_DAYS
@@ -347,3 +350,57 @@ def test_write_outputs_always_calls_errors_summary(tmp_path, monkeypatch):
     assert (deploy_dir / "errors_summary.json").exists()
     summary = json.loads((deploy_dir / "errors_summary.json").read_text())
     assert summary["dates"] == ["2026-06-29"]
+
+
+def test_backfill_errors_overwrites_changed_forecast_entry(tmp_path, monkeypatch):
+    """A stale backtest error file is replaced when production history takes over a date."""
+    import energy_forecasting.deploy.publish as pub
+    import energy_forecasting.config as cfg_mod
+
+    deploy_dir = tmp_path / "deploy"
+    errors_dir = deploy_dir / "errors"
+    processed_dir = tmp_path / "processed"
+    deploy_dir.mkdir(parents=True)
+    errors_dir.mkdir()
+    processed_dir.mkdir()
+
+    price_df = _price_df()
+    delivery_date = price_df.index[0].strftime("%Y-%m-%d")
+    history = {
+        "target": "price",
+        "forecasts": [{
+            "target": "price",
+            "region": "DE_LU",
+            "issued_at": "2026-06-29T08:00:00Z",
+            "source": "production",
+            "horizon_hours": 24,
+            "unit": "EUR/MWh",
+            "forecasts": [
+                {"timestamp": ts.isoformat(), "forecast": float(v)}
+                for ts, v in price_df["y_pred"].items()
+            ],
+        }],
+        "count": 1,
+    }
+    (deploy_dir / "forecast_history.json").write_text(json.dumps(history))
+    (errors_dir / f"{delivery_date}.json").write_text(json.dumps({
+        "date": delivery_date,
+        "mae": 999.0,
+        "rmse": 999.0,
+        "source": "backtest",
+        "issued_at": "2026-06-29T08:00:00Z",
+    }))
+
+    actuals = pd.DataFrame({"target_price": price_df["y_pred"].values}, index=price_df.index)
+    actuals.to_parquet(processed_dir / "merged.parquet")
+
+    monkeypatch.setattr(pub, "HISTORY_PATH", deploy_dir / "forecast_history.json")
+    monkeypatch.setattr(pub, "ERRORS_DIR", errors_dir)
+    monkeypatch.setattr(cfg_mod, "PROCESSED_DATA_DIR", processed_dir)
+
+    pub.backfill_errors()
+
+    error = json.loads((errors_dir / f"{delivery_date}.json").read_text())
+    assert error["source"] == "production"
+    assert error["mae"] == 0.0
+    assert error["rmse"] == 0.0
