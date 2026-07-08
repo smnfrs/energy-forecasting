@@ -58,12 +58,12 @@ jobs:
 
       - name: Download forecast outputs
         run: |
+          rm -rf deploy/data/
           mkdir -p deploy/data
           gh run download "${{ steps.find-run.outputs.run_id }}" \
             --repo "$REPO" \
             --name "forecast-outputs-${{ steps.find-run.outputs.run_id }}" \
-            --dir deploy/data/ \
-            --clobber
+            --dir deploy/data/
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
