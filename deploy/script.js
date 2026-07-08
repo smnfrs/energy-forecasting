@@ -134,6 +134,15 @@
     if (el) el.innerHTML = `<p class="no-data">${t(key || "no_data")}</p>`;
   }
 
+  function escapeHTML(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
   // ── i18n ──────────────────────────────────────────────────────────────────
 
   function t(key) {
@@ -642,6 +651,7 @@
     renderHourlyErrorProfile(_allData.actuals, _allData.history);
     renderCompositionChart(_allData.metadata);
     renderGenLoadErrors(_allData.glErrors);
+    renderFeatureAudit(_allData.featureAudit);
     renderRetrainLog(_allData.retrainHistory);
   }
 
@@ -915,6 +925,81 @@
     }, { responsive: true, displayModeBar: false });
   }
 
+  function pct(num, den) {
+    if (!den) return "—";
+    return `${Math.round((num / den) * 100)}%`;
+  }
+
+  function matrixStatus(matrix) {
+    if (!matrix || matrix.rows === undefined) return "—";
+    return `${matrix.complete_rows}/${matrix.rows} rows · ${matrix.nan_cells || 0} NaNs`;
+  }
+
+  function renderFeatureAudit(audit) {
+    const el = document.getElementById("feature-audit-panel");
+    if (!el) return;
+    if (!audit) { noDataInline(el); return; }
+
+    const price = audit.price || {};
+    const source = price.source_availability || {};
+    const stale = source.stale_columns || [];
+    const staleRows = stale.slice(0, 8).map(c => `<tr>
+      <td>${escapeHTML(c.name)}</td>
+      <td>${escapeHTML(c.last_observed || "—")}</td>
+      <td>${c.hours_stale_at_start === null || c.hours_stale_at_start === undefined ? "—" : Number(c.hours_stale_at_start).toFixed(1)}</td>
+    </tr>`).join("");
+
+    const fvRows = (price.feature_versions || []).map(fv => {
+      const m = fv.matrix || {};
+      const missing = (fv.missing_configured_features || []).length;
+      return `<tr>
+        <td>${escapeHTML(fv.feature_version || "—")}</td>
+        <td>${escapeHTML(fv.dataset_name || "—")}</td>
+        <td>${fv.configured_feature_count ?? "—"}</td>
+        <td>${matrixStatus(m)}</td>
+        <td>${missing}</td>
+      </tr>`;
+    }).join("");
+
+    const glRows = (audit.gen_load || []).map(item => {
+      const m = item.selected_matrix || {};
+      const missingHours = (item.forecast_hours_requested || 0) - (item.forecast_hours_predicted || 0);
+      const missingExpected = (item.missing_expected_features || []).length;
+      return `<tr>
+        <td>${escapeHTML(item.target || "—")}</td>
+        <td>${escapeHTML(item.region || "—")}</td>
+        <td>${item.forecast_hours_predicted ?? "—"}/${item.forecast_hours_requested ?? "—"}</td>
+        <td>${matrixStatus(m)}</td>
+        <td>${missingHours > 0 ? missingHours : 0}</td>
+        <td>${missingExpected}</td>
+      </tr>`;
+    }).join("");
+
+    const fullPath = audit.full_audit_path ? `${DATA}${audit.full_audit_path}` : null;
+    el.innerHTML = `
+      <div class="audit-summary-grid">
+        <div class="audit-metric"><strong>${escapeHTML(audit.issued_at || "—")}</strong><span>Issued at</span></div>
+        <div class="audit-metric"><strong>${source.columns_filled_from_history ?? 0}/${source.columns ?? "—"}</strong><span>Price inputs filled from history</span></div>
+        <div class="audit-metric"><strong>${pct(source.columns_present_in_forecast_window || 0, source.columns || 0)}</strong><span>Price inputs present in window</span></div>
+        <div class="audit-metric"><strong>${audit.gen_load?.length || 0}</strong><span>Gen/load model runs</span></div>
+      </div>
+      ${fullPath ? `<p class="audit-link"><a href="${escapeHTML(fullPath)}" target="_blank" rel="noopener">Open full audit JSON</a></p>` : ""}
+      <div class="audit-tables">
+        <div>
+          <h3>Price feature versions</h3>
+          <table><thead><tr><th>Version</th><th>Dataset</th><th>Features</th><th>Completeness</th><th>Missing</th></tr></thead><tbody>${fvRows || `<tr><td colspan="5">—</td></tr>`}</tbody></table>
+        </div>
+        <div>
+          <h3>Stale price source inputs</h3>
+          <table><thead><tr><th>Column</th><th>Last observed</th><th>Hours stale</th></tr></thead><tbody>${staleRows || `<tr><td colspan="3">None</td></tr>`}</tbody></table>
+        </div>
+        <div>
+          <h3>Generation/load feature runs</h3>
+          <table><thead><tr><th>Target</th><th>Region</th><th>Hours</th><th>Completeness</th><th>Missing hours</th><th>Missing model features</th></tr></thead><tbody>${glRows || `<tr><td colspan="6">—</td></tr>`}</tbody></table>
+        </div>
+      </div>`;
+  }
+
   function renderRetrainLog(history) {
     const el = document.getElementById("retrain-log");
     if (!el) return;
@@ -954,7 +1039,7 @@
       price, historyRaw, actuals, metadata,
       summary, retrainHistory, glErrors, glActuals,
       wo, woff, sol, load, gld,
-      glHindcast,
+      glHindcast, featureAudit,
     ] = await Promise.all([
       fetchJSON(DATA + "price_forecast.json"),
       fetchJSON(DATA + "forecast_history.json"),
@@ -970,6 +1055,7 @@
       fetchJSON(DATA + "gen_load/load_national.json"),
       fetchJSON(DATA + "gen_load/gen_load_diff_national.json"),
       fetchJSON(DATA + "gen_load_hindcast.json"),
+      fetchJSON(DATA + "feature_audit.json"),
     ]);
 
     const history = adaptHistory(historyRaw);
@@ -979,6 +1065,7 @@
       actuals, history,
       genLoad: { wo, woff, sol, load, gld },
       glHindcast: glHindcast,
+      featureAudit,
     };
 
     // Prices tab renders immediately (default active tab)

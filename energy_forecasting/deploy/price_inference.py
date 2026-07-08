@@ -96,10 +96,18 @@ def _extend_to_forecast_date(
     #   the raw data from the data update step. If not yet available, ffill.
     # Target column stays NaN so engineer_features drops it for the D+1 rows
     # if 'target_price__target' is used.
+    original_before_fill = extended.copy()
     feature_cols = [c for c in extended.columns if c != PRICE_TARGET]
     extended[feature_cols] = extended[feature_cols].ffill()
     if PRICE_TARGET in extended.columns:
         extended.loc[new_idx, PRICE_TARGET] = np.nan
+    from energy_forecasting.deploy.feature_monitoring import summarize_source_availability
+
+    extended.attrs["source_availability"] = summarize_source_availability(
+        original_before_fill,
+        new_idx,
+        exclude_columns={PRICE_TARGET},
+    )
 
     logger.info(
         f"Prepared merged dataset for delivery date {forecast_date}: "
@@ -182,6 +190,18 @@ def _engineer_features_for_version(
 
     X_all = full_features[feature_cols]
     X_d1 = X_all.reindex(d1_index)
+    from energy_forecasting.deploy.feature_monitoring import dataframe_records, summarize_matrix
+
+    X_d1.attrs["feature_audit"] = {
+        "feature_version": feature_version,
+        "dataset_name": ds_name,
+        "configured_feature_count": len(feature_cols),
+        "engineered_feature_count": int(full_features.shape[1]),
+        "configured_features": feature_cols,
+        "missing_configured_features": missing,
+        "matrix": summarize_matrix(X_d1, timestamps=d1_index),
+        "feature_values": dataframe_records(X_d1),
+    }
     logger.info(
         f"Built {feature_version} features: {len(feature_cols)} columns, "
         f"{X_d1.notna().all(axis=1).sum()}/{len(X_d1)} complete D+1 rows"
@@ -224,6 +244,10 @@ def run_price_inference(
 
     # Build feature matrices
     feature_matrices = _build_feature_matrices(extended_df, d1_index, feature_versions_needed)
+    feature_audit_by_version = {
+        fv: matrix.attrs.get("feature_audit", {})
+        for fv, matrix in feature_matrices.items()
+    }
 
     # Run each production model
     weights = ensemble_config["ensemble"]["weights"]
@@ -288,6 +312,26 @@ def run_price_inference(
         index=d1_index,
     )
     result.attrs["model_predictions"] = model_predictions
+    result.attrs["feature_audit"] = {
+        "target": "price",
+        "region": "DE_LU",
+        "forecast_start": d1_index[0].isoformat(),
+        "forecast_end": d1_index[-1].isoformat(),
+        "source_availability": extended_df.attrs.get("source_availability", {}),
+        "feature_versions": [
+            feature_audit_by_version[fv]
+            for fv in sorted(feature_audit_by_version)
+        ],
+        "models": [
+            {
+                "name": name,
+                "run_id": entry["run_id"],
+                "feature_version": entry["feature_version"],
+                "weight": float(weights.get(name, 0.0)),
+            }
+            for name, entry in sorted(model_entries.items())
+        ],
+    }
     logger.info(
         f"Price inference complete: {len(result)} hours, "
         f"mean={y_blend.mean():.1f} EUR/MWh, "

@@ -26,9 +26,8 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 from zoneinfo import ZoneInfo
-
-_BERLIN_TZ = ZoneInfo("Europe/Berlin")
 
 import numpy as np
 import pandas as pd
@@ -36,11 +35,15 @@ from loguru import logger
 
 from energy_forecasting.config import DEPLOY_DATA_DIR
 
+_BERLIN_TZ = ZoneInfo("Europe/Berlin")
+
 GEN_LOAD_DATA_DIR = DEPLOY_DATA_DIR / "gen_load"
 ERRORS_DIR = DEPLOY_DATA_DIR / "errors"
 HISTORY_PATH = DEPLOY_DATA_DIR / "forecast_history.json"
 METADATA_PATH = DEPLOY_DATA_DIR / "model_metadata.json"
 PRICE_FORECAST_PATH = DEPLOY_DATA_DIR / "price_forecast.json"
+FEATURE_AUDIT_PATH = DEPLOY_DATA_DIR / "feature_audit.json"
+FEATURE_AUDIT_RUNS_DIR = DEPLOY_DATA_DIR / "feature_audit_runs"
 HISTORY_DAYS = 30
 
 # TSO region code → per-TSO filename suffix (must match JS GEN_LOAD_CARDS tso keys)
@@ -246,6 +249,134 @@ def write_gen_load_forecasts(
         logger.debug(f"Written {out}")
 
     logger.info("Gen/load forecast JSONs written (national + per-TSO + gen_load_diff)")
+
+
+def _audit_run_path(issued_at: str, runs_dir: Path | None = None) -> Path:
+    safe = issued_at.replace(":", "").replace("+", "p")
+    safe = "".join(ch if ch.isalnum() or ch in "._-TZ" else "_" for ch in safe)
+    return (runs_dir or FEATURE_AUDIT_RUNS_DIR) / f"{safe}.json"
+
+
+def _compact_matrix(matrix: dict, *, max_columns: int = 12, max_rows: int = 8) -> dict:
+    compact = {
+        k: matrix.get(k)
+        for k in [
+            "rows",
+            "columns",
+            "complete_rows",
+            "nan_cells",
+            "first_timestamp",
+            "last_timestamp",
+        ]
+        if k in matrix
+    }
+    compact["columns_with_nan"] = matrix.get("columns_with_nan", [])[:max_columns]
+    compact["rows_with_nan"] = matrix.get("rows_with_nan", [])[:max_rows]
+    return compact
+
+
+def _compact_price_audit(price: dict) -> dict:
+    source = dict(price.get("source_availability", {}))
+    source["stale_columns"] = source.get("stale_columns", [])[:20]
+    return {
+        "target": price.get("target"),
+        "region": price.get("region"),
+        "forecast_start": price.get("forecast_start"),
+        "forecast_end": price.get("forecast_end"),
+        "source_availability": source,
+        "models": price.get("models", []),
+        "feature_versions": [
+            {
+                "feature_version": fv.get("feature_version"),
+                "dataset_name": fv.get("dataset_name"),
+                "configured_feature_count": fv.get("configured_feature_count"),
+                "engineered_feature_count": fv.get("engineered_feature_count"),
+                "missing_configured_features": fv.get("missing_configured_features", [])[:20],
+                "matrix": _compact_matrix(fv.get("matrix", {})),
+            }
+            for fv in price.get("feature_versions", [])
+        ],
+    }
+
+
+def _compact_gen_load_audit(entries: list[dict]) -> list[dict]:
+    compact_entries = []
+    for item in entries:
+        components = {
+            name: _compact_matrix(matrix)
+            for name, matrix in item.get("components", {}).items()
+        }
+        compact_entries.append(
+            {
+                "target": item.get("target"),
+                "region": item.get("region"),
+                "run_id": item.get("run_id"),
+                "forecast_start": item.get("forecast_start"),
+                "forecast_end": item.get("forecast_end"),
+                "forecast_hours_requested": item.get("forecast_hours_requested"),
+                "forecast_hours_predicted": item.get("forecast_hours_predicted"),
+                "selected_matrix": _compact_matrix(item.get("selected_matrix", {})),
+                "components": components,
+                "feature_count": len(item.get("feature_columns", [])),
+                "expected_feature_count": item.get("expected_feature_count"),
+                "missing_expected_features": item.get("missing_expected_features", [])[:20],
+                "extra_features": item.get("extra_features", [])[:20],
+                "exog_targets": item.get("exog_targets", []),
+            }
+        )
+    return compact_entries
+
+
+def write_feature_audit(
+    price_df: pd.DataFrame,
+    gen_load_results: dict,
+    issued_at: str | None = None,
+) -> None:
+    """Write compact and full runtime feature availability diagnostics."""
+    DEPLOY_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    runs_dir = FEATURE_AUDIT_RUNS_DIR
+    try:
+        runs_dir.relative_to(DEPLOY_DATA_DIR)
+    except ValueError:
+        runs_dir = DEPLOY_DATA_DIR / "feature_audit_runs"
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    issued_at = issued_at or _now_utc()
+
+    gen_load_audits = []
+    for (target, region), df in sorted(gen_load_results.items()):
+        audit = dict(df.attrs.get("feature_audit", {}))
+        if not audit:
+            audit = {
+                "target": target,
+                "region": region,
+                "forecast_hours_predicted": int(len(df)),
+            }
+        gen_load_audits.append(audit)
+
+    full_payload = {
+        "schema_version": 1,
+        "issued_at": issued_at,
+        "generated_at": _now_utc(),
+        "price": price_df.attrs.get("feature_audit", {}),
+        "gen_load": gen_load_audits,
+    }
+    full_path = _audit_run_path(issued_at, runs_dir=runs_dir)
+    full_path.write_text(json.dumps(full_payload, indent=2))
+    try:
+        full_audit_path = str(full_path.relative_to(DEPLOY_DATA_DIR))
+    except ValueError:
+        full_audit_path = str(full_path)
+
+    compact_payload = {
+        "schema_version": 1,
+        "issued_at": issued_at,
+        "generated_at": full_payload["generated_at"],
+        "full_audit_path": full_audit_path,
+        "price": _compact_price_audit(full_payload.get("price", {})),
+        "gen_load": _compact_gen_load_audit(gen_load_audits),
+    }
+    FEATURE_AUDIT_PATH.write_text(json.dumps(compact_payload, indent=2))
+    logger.info(f"Written {FEATURE_AUDIT_PATH} and {full_path}")
 
 
 def write_model_metadata(issued_at: str | None = None) -> None:
@@ -611,14 +742,14 @@ def backfill_price_history_from_model(n_days: int = 60) -> int:
     try:
         from energy_forecasting.config import PROCESSED_DATA_DIR
         from energy_forecasting.config.features import PRICE_FEATURES_MAX
-        from energy_forecasting.features.engine import engineer_features as _eng
-        from energy_forecasting.modeling.datasets import DATASET_DIR
         from energy_forecasting.deploy.model_store import (
             load_ensemble_config,
             load_price_model,
             load_price_model_scaler,
             production_model_names,
         )
+        from energy_forecasting.features.engine import engineer_features as _eng
+        from energy_forecasting.modeling.datasets import DATASET_DIR
     except ImportError as exc:
         logger.warning(f"backfill_price_history_from_model: import failed — {exc}")
         return 0
@@ -807,6 +938,7 @@ def write_outputs(
     write_price_forecast(price_df, issued_at=issued_at)
     _append_price_history(price_df, issued_at=issued_at)
     write_gen_load_forecasts(gen_load_results, issued_at=issued_at)
+    write_feature_audit(price_df, gen_load_results, issued_at=issued_at)
     write_model_metadata(issued_at=issued_at)
     write_actuals()
     write_gen_load_actuals()

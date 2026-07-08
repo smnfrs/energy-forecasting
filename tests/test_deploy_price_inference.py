@@ -1,9 +1,9 @@
 """Tests for deploy/price_inference.py."""
 
 from datetime import date, datetime, timezone
+
 import numpy as np
 import pandas as pd
-
 from energy_forecasting.deploy import price_inference as pi
 
 

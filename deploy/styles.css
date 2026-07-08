@@ -244,6 +244,51 @@ details.forecast-card .chart-body {
 }
 .info-panel .info-item strong { color: #343a40; }
 
+
+/* ── Feature audit monitoring ─────────────────────────────────────────────── */
+.audit-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.audit-metric {
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  padding: 0.75rem;
+  background: #f8f9fa;
+}
+.audit-metric strong {
+  display: block;
+  font-size: 1rem;
+  color: #212529;
+  margin-bottom: 0.2rem;
+}
+.audit-metric span {
+  color: #6c757d;
+  font-size: 0.78rem;
+}
+.audit-link {
+  margin: 0.5rem 0 1rem;
+  font-size: 0.85rem;
+}
+.audit-tables {
+  display: grid;
+  gap: 1rem;
+}
+.audit-tables h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.9rem;
+  color: #343a40;
+}
+.audit-tables table {
+  table-layout: fixed;
+}
+.audit-tables td,
+.audit-tables th {
+  overflow-wrap: anywhere;
+}
+
 /* ── Retrain log table ────────────────────────────────────────────────────── */
 table {
   width: 100%;

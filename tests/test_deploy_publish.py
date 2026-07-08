@@ -4,7 +4,6 @@ import json
 
 import numpy as np
 import pandas as pd
-import pytest
 from energy_forecasting.api.schemas import ForecastResponse, HourlyForecast
 
 
@@ -129,8 +128,8 @@ def _merged_parquet(path, n_days=32, partial_day=True):
 
 def test_write_actuals_filters_then_trims(tmp_path, monkeypatch):
     """Complete days are filtered before trimming to 30; partial tail excluded."""
-    import energy_forecasting.deploy.publish as pub
     import energy_forecasting.config as cfg_mod
+    import energy_forecasting.deploy.publish as pub
 
     data_dir = tmp_path / "processed"
     data_dir.mkdir()
@@ -150,8 +149,8 @@ def test_write_actuals_filters_then_trims(tmp_path, monkeypatch):
 
 def test_write_actuals_missing_parquet(tmp_path, monkeypatch):
     """write_actuals returns silently if merged.parquet is absent."""
-    import energy_forecasting.deploy.publish as pub
     import energy_forecasting.config as cfg_mod
+    import energy_forecasting.deploy.publish as pub
 
     monkeypatch.setattr(pub, "DEPLOY_DATA_DIR", tmp_path / "deploy")
     monkeypatch.setattr(cfg_mod, "PROCESSED_DATA_DIR", tmp_path / "processed")
@@ -274,10 +273,91 @@ def test_write_gen_load_forecasts_writes_gen_load_diff(tmp_path, monkeypatch):
     assert len(data["forecasts"]) == 168
 
 
+def test_write_feature_audit_writes_compact_and_full_archive(tmp_path, monkeypatch):
+    """Feature audit keeps dashboard JSON compact and archives full per-run details."""
+    import energy_forecasting.deploy.publish as pub
+
+    deploy_dir = tmp_path / "deploy"
+    monkeypatch.setattr(pub, "DEPLOY_DATA_DIR", deploy_dir)
+    monkeypatch.setattr(pub, "FEATURE_AUDIT_PATH", deploy_dir / "feature_audit.json")
+    monkeypatch.setattr(pub, "FEATURE_AUDIT_RUNS_DIR", deploy_dir / "feature_audit_runs")
+
+    price_df = _price_df()
+    price_df.attrs["feature_audit"] = {
+        "target": "price",
+        "region": "DE_LU",
+        "source_availability": {
+            "columns": 40,
+            "columns_present_in_forecast_window": 10,
+            "columns_filled_from_history": 30,
+            "stale_columns": [
+                {"name": f"raw_{i}", "last_observed": "2026-06-29T00:00:00", "hours_stale_at_start": i}
+                for i in range(25)
+            ],
+        },
+        "feature_versions": [{
+            "feature_version": "fs_test",
+            "dataset_name": "price_fs_test",
+            "configured_feature_count": 3,
+            "engineered_feature_count": 5,
+            "missing_configured_features": [],
+            "matrix": {
+                "rows": 24,
+                "columns": 3,
+                "complete_rows": 23,
+                "nan_cells": 2,
+                "columns_with_nan": [{"name": f"f{i}", "nan_count": 1} for i in range(20)],
+                "rows_with_nan": [{"timestamp": f"2026-07-01T{i:02d}:00:00", "nan_count": 1, "sample_columns": ["f0"]} for i in range(12)],
+            },
+            "configured_features": ["f0", "f1", "f2"],
+            "feature_values": [
+                {"timestamp": "2026-07-01T00:00:00", "f0": 1.0, "f1": None, "f2": 3.0}
+            ],
+        }],
+        "models": [],
+    }
+
+    gen_df = _gen_df()
+    gen_df.attrs["feature_audit"] = {
+        "target": "load",
+        "region": "DE_50HZ",
+        "forecast_hours_requested": 168,
+        "forecast_hours_predicted": 167,
+        "selected_matrix": {"rows": 167, "columns": 2, "complete_rows": 166, "nan_cells": 1},
+        "feature_columns": [f"gl_{i}" for i in range(50)],
+        "feature_values": [{"timestamp": "2026-07-01T00:00:00Z", "gl_0": 1.0}],
+        "missing_expected_features": [f"missing_{i}" for i in range(30)],
+    }
+
+    pub.write_feature_audit(
+        price_df,
+        {("load", "DE_50HZ"): gen_df},
+        issued_at="2026-07-01T08:00:00Z",
+    )
+
+    compact = json.loads((deploy_dir / "feature_audit.json").read_text())
+    assert compact["full_audit_path"].startswith("feature_audit_runs/")
+    assert len(compact["price"]["source_availability"]["stale_columns"]) == 20
+    assert len(compact["price"]["feature_versions"][0]["matrix"]["columns_with_nan"]) == 12
+    assert compact["gen_load"][0]["feature_count"] == 50
+    assert len(compact["gen_load"][0]["missing_expected_features"]) == 20
+    assert "feature_values" not in compact["price"]["feature_versions"][0]
+    assert "feature_values" not in compact["gen_load"][0]
+
+    full_path = deploy_dir / compact["full_audit_path"]
+    full = json.loads(full_path.read_text())
+    assert len(full["price"]["source_availability"]["stale_columns"]) == 25
+    assert len(full["price"]["feature_versions"][0]["matrix"]["columns_with_nan"]) == 20
+    assert full["price"]["feature_versions"][0]["feature_values"][0]["f0"] == 1.0
+    assert len(full["gen_load"][0]["feature_columns"]) == 50
+    assert full["gen_load"][0]["feature_values"][0]["gl_0"] == 1.0
+    assert len(full["gen_load"][0]["missing_expected_features"]) == 30
+
+
 def test_write_gen_load_actuals_writes_file(tmp_path, monkeypatch):
     """write_gen_load_actuals produces gen_load_actuals.json from TSO parquets."""
-    import energy_forecasting.deploy.publish as pub
     import energy_forecasting.config as cfg_mod
+    import energy_forecasting.deploy.publish as pub
 
     tso_dir = tmp_path / "processed" / "tso"
     _tso_parquet(tso_dir / "50Hertz.parquet", "_50hz", n_complete_days=8)
@@ -306,8 +386,8 @@ def test_write_gen_load_actuals_writes_file(tmp_path, monkeypatch):
 
 def test_write_gen_load_actuals_missing_tso_dir(tmp_path, monkeypatch):
     """write_gen_load_actuals silently skips if tso dir is absent."""
-    import energy_forecasting.deploy.publish as pub
     import energy_forecasting.config as cfg_mod
+    import energy_forecasting.deploy.publish as pub
 
     monkeypatch.setattr(pub, "DEPLOY_DATA_DIR", tmp_path / "deploy")
     monkeypatch.setattr(cfg_mod, "PROCESSED_DATA_DIR", tmp_path / "processed")
@@ -318,8 +398,8 @@ def test_write_gen_load_actuals_missing_tso_dir(tmp_path, monkeypatch):
 
 def test_write_outputs_always_calls_errors_summary(tmp_path, monkeypatch):
     """write_outputs rebuilds errors_summary.json unconditionally."""
-    import energy_forecasting.deploy.publish as pub
     import energy_forecasting.deploy.model_store as ms
+    import energy_forecasting.deploy.publish as pub
 
     deploy_dir = tmp_path / "deploy"
     errors_dir = deploy_dir / "errors"
@@ -357,8 +437,8 @@ def test_write_outputs_always_calls_errors_summary(tmp_path, monkeypatch):
 
 def test_backfill_errors_overwrites_changed_forecast_entry(tmp_path, monkeypatch):
     """A stale backtest error file is replaced when production history takes over a date."""
-    import energy_forecasting.deploy.publish as pub
     import energy_forecasting.config as cfg_mod
+    import energy_forecasting.deploy.publish as pub
 
     deploy_dir = tmp_path / "deploy"
     errors_dir = deploy_dir / "errors"

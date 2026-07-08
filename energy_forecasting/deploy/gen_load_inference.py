@@ -304,10 +304,26 @@ def _infer_one(
             "forecast hours have complete features"
         )
 
+    from energy_forecasting.deploy.feature_monitoring import (
+        dataframe_records,
+        model_expected_features,
+        summarize_matrix,
+    )
+
+    component_audit = {
+        "weather": summarize_matrix(weather_features.reindex(forecast_idx), timestamps=forecast_idx),
+        "temporal_lag": summarize_matrix(temporal_features.reindex(forecast_idx), timestamps=forecast_idx),
+    }
+    if exog_df is not None and not exog_df.empty:
+        component_audit["exogenous"] = summarize_matrix(exog_df.reindex(forecast_idx), timestamps=forecast_idx)
+
     frames = [weather_features.loc[common_idx], temporal_features.loc[common_idx]]
     if exog_df is not None and not exog_df.empty:
         frames.append(exog_df.loc[common_idx])
     X_forecast = pd.concat(frames, axis=1)
+    expected_features = model_expected_features(model)
+    missing_expected = [c for c in expected_features if c not in X_forecast.columns]
+    extra_features = [c for c in X_forecast.columns if expected_features and c not in expected_features]
 
     # Target lag columns (autoregressive)
     if lags_target:
@@ -315,6 +331,9 @@ def _infer_one(
         for col, vals in lag_seed.items():
             X_forecast[col] = vals
 
+        expected_features = model_expected_features(model)
+        missing_expected = [c for c in expected_features if c not in X_forecast.columns]
+        extra_features = [c for c in X_forecast.columns if expected_features and c not in expected_features]
         lag_columns = find_target_lag_columns(X_forecast.columns, target)
         result_df = forecast_with_lags(model, X_forecast, y_actual, lag_columns)
     else:
@@ -338,6 +357,25 @@ def _infer_one(
         is_day = _solar_elevation_mask(out.index)
         out.loc[~is_day, ["y_pred", "y_lower", "y_upper"]] = 0.0
 
+    out.attrs["feature_audit"] = {
+        "target": target,
+        "region": region,
+        "run_id": config_entry.get("run_id"),
+        "forecast_start": forecast_idx[0].isoformat(),
+        "forecast_end": forecast_idx[-1].isoformat(),
+        "forecast_hours_requested": int(len(forecast_idx)),
+        "forecast_hours_predicted": int(len(out)),
+        "dataset_params": ds_params,
+        "weather_config": weather_config,
+        "components": component_audit,
+        "selected_matrix": summarize_matrix(X_forecast, timestamps=X_forecast.index),
+        "feature_columns": [str(c) for c in X_forecast.columns],
+        "feature_values": dataframe_records(X_forecast),
+        "expected_feature_count": len(expected_features),
+        "missing_expected_features": missing_expected,
+        "extra_features": extra_features[:50],
+        "exog_targets": GEN_LOAD_TARGETS[target].get("exog_targets", []),
+    }
     logger.info(f"Inferred {target}/{region}: {len(out)} hours, mean={out['y_pred'].mean():.1f}")
     return out
 
