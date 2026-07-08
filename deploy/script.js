@@ -549,19 +549,6 @@
     }
     const hasActualsTrace = traces.length > actualsStartIdx;
 
-    // Determine x-axis window: last 3 days of actuals + forecast extent
-    let xRange = null;
-    if (glActuals && glActuals[cfg.target] && glActuals[cfg.target].days) {
-      const days = glActuals[cfg.target].days;
-      if (days.length >= 2) {
-        // Start 3 days before the last actuals day
-        const lastActualDay = days[days.length - 1].date;
-        const startDay = new Date(lastActualDay);
-        startDay.setDate(startDay.getDate() - 3);
-        xRange = [startDay.toISOString().slice(0, 10), null]; // null = auto end
-      }
-    }
-
     const chartDiv = document.createElement("div");
     container.appendChild(controls);
     container.appendChild(chartDiv);
@@ -573,15 +560,14 @@
       margin: { t: 20, r: 20, b: 80, l: 65 },
       height: 300,
     };
-    if (xRange) layout.xaxis.range = xRange;
 
     Plotly.newPlot(chartDiv, traces, layout, { responsive: true, displayModeBar: false });
-    // Two-shot resize: when all 4 cards render simultaneously after the tab
-    // becomes visible, the RAF can fire before the grid has committed its
-    // final column widths.  The 100 ms fallback ensures at least one call
-    // lands after layout has settled.
-    requestAnimationFrame(() => Plotly.Plots.resize(chartDiv));
-    setTimeout(() => Plotly.Plots.resize(chartDiv), 100);
+    // relayout({ autosize: true }) forces Plotly to re-measure the container
+    // and fully re-render. Plots.resize() alone only adjusts SVG dimensions
+    // without re-rendering traces, leaving the chart blank after a zero-width
+    // initial render. This mirrors what Plotly.restyle() does internally (the
+    // "toggle workaround" that users discovered).
+    setTimeout(() => Plotly.relayout(chartDiv, { autosize: true }), 200);
 
     controls.querySelectorAll("input[type=checkbox]").forEach(cb => {
       cb.addEventListener("change", () => {
@@ -612,7 +598,11 @@
         rendered = true;
         const files = cfg.tsos.map(tso => `${DATA}gen_load/${cfg.target}_${tso}.json`);
         const dataArr = await Promise.all(files.map(fetchJSON));
-        await new Promise(resolve => requestAnimationFrame(resolve));
+        // setTimeout instead of RAF: when all 4 cards render simultaneously
+        // on tab activation, a RAF fires before the CSS grid has committed
+        // its column widths, giving Plotly a zero-width container.
+        // 50 ms is enough for the browser to finish the layout pass.
+        await new Promise(resolve => setTimeout(resolve, 50));
         renderGenLoadCard(el.querySelector(".chart-container"), cfg, dataArr, glActuals);
       };
 
