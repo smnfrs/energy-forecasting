@@ -43,8 +43,9 @@ for target in TARGETS:
     else:
         hf.index = idx.tz_localize("UTC")
 
-    cutoff = hf.index.max() - pd.Timedelta(days=7)
-    hf = hf[hf.index > cutoff].dropna()
+    now = pd.Timestamp.now(tz="UTC")
+    cutoff = now - pd.Timedelta(days=7)
+    hf = hf[(hf.index > cutoff) & (hf.index < now)].dropna()
     if hf.empty:
         print(f"  {target}: no data in last 7 days, skipping", file=sys.stderr)
         continue

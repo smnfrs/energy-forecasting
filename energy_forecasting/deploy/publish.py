@@ -576,9 +576,11 @@ def write_gen_load_hindcast() -> None:
         else:
             hf.index = idx.tz_localize("UTC")
 
-        # Last 7 days relative to the most recent prediction
-        cutoff = hf.index.max() - pd.Timedelta(days=7)
-        hf = hf[hf.index > cutoff].dropna()
+        # Past 7 days: exclude future predictions (index < now) so we only
+        # show delivery times that have already passed and have real actuals.
+        now = pd.Timestamp.now(tz="UTC")
+        cutoff = now - pd.Timedelta(days=7)
+        hf = hf[(hf.index > cutoff) & (hf.index < now)].dropna()
         if hf.empty:
             continue
 
