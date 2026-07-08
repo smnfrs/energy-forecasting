@@ -1,0 +1,64 @@
+name: Deploy Static
+
+# Redeploy GitHub Pages using the latest forecast data from the most recent
+# successful daily_forecast run.  Use this to iterate on dashboard styling
+# (script.js, styles.css, index.html, translations.json) without waiting for
+# the full 35-minute data + inference pipeline.
+#
+# Typical run time: ~1 minute.
+
+on:
+  workflow_dispatch:
+
+env:
+  REPO: smnfrs/energy-forecasting
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+      actions: read
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find latest successful daily forecast run
+        id: find-run
+        run: |
+          RUN_ID=$(gh run list --repo "$REPO" --workflow daily_forecast.yml \
+            --status success --limit 1 --json databaseId \
+            --jq '.[0].databaseId')
+          if [ -z "$RUN_ID" ]; then
+            echo "No successful daily_forecast run found" >&2
+            exit 1
+          fi
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "Using forecast data from run $RUN_ID"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download forecast outputs
+        run: |
+          mkdir -p deploy/data
+          gh run download "${{ steps.find-run.outputs.run_id }}" \
+            --repo "$REPO" \
+            --name "forecast-outputs-${{ steps.find-run.outputs.run_id }}" \
+            --dir deploy/data/
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./deploy
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
