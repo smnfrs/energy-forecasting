@@ -398,8 +398,7 @@
       actualStackCount++;
     }
 
-    // ── Forecast generation: cumulative boundary dotted lines ──
-    // Manually accumulate so lines trace the stacked tops without stackgroup fill.
+    // ── Forecast generation: translucent stacked areas ──
     const fcSeries = [
       { data: wo,   name: `${t("wind_onshore")} (${t("forecast")})`,  color: "#2266CC" },
       { data: woff, name: `${t("wind_offshore")} (${t("forecast")})`, color: "#44AADD" },
@@ -407,20 +406,16 @@
       { data: gld,  name: `${t("other_gen")} (${t("forecast")})`,     color: "#8899AA" },
     ].filter(s => s.data);
 
-    if (fcSeries.length) {
-      const timestamps = fcSeries[0].data.forecasts.map(f => f.timestamp);
-      const maps = fcSeries.map(s => new Map(s.data.forecasts.map(f => [f.timestamp, f.forecast])));
-
-      let cumYs = new Array(timestamps.length).fill(0);
-      for (let i = 0; i < fcSeries.length; i++) {
-        cumYs = cumYs.map((acc, j) => acc + (maps[i].get(timestamps[j]) ?? 0));
-        traces.push({
-          x: timestamps, y: [...cumYs],
-          type: "scatter", mode: "lines",
-          name: fcSeries[i].name,
-          line: { color: fcSeries[i].color, width: 1.5, dash: "dot" },
-        });
-      }
+    for (const s of fcSeries) {
+      traces.push({
+        x: s.data.forecasts.map(f => f.timestamp),
+        y: s.data.forecasts.map(f => f.forecast),
+        type: "scatter", mode: "lines",
+        name: s.name,
+        stackgroup: "gen_fc",
+        fillcolor: colorWithAlpha(s.color, 0.28),
+        line: { color: s.color, width: 1, dash: "dot" },
+      });
     }
 
     // ── Load actual (solid red line, y2) ──
@@ -435,15 +430,21 @@
     }
 
     // ── Load forecast (dashed red line, y2) ──
-    // Prepend the last actual point so the forecast line connects smoothly.
+    // Trim to hours strictly after the last actual, then bridge with one
+    // connecting point so the dashed line starts exactly where the solid line ends.
     if (load) {
       const fcXs = load.forecasts.map(f => f.timestamp);
       const fcYs = load.forecasts.map(f => f.forecast);
       const lastActX = loadActual.xs[loadActual.xs.length - 1];
       const lastActY = loadActual.ys[loadActual.ys.length - 1];
+      let fcStartIdx = 0;
+      if (lastActX != null) {
+        const idx = fcXs.findIndex(x => x > lastActX);
+        fcStartIdx = idx >= 0 ? idx : fcXs.length;
+      }
       traces.push({
-        x: lastActX != null ? [lastActX, ...fcXs] : fcXs,
-        y: lastActY != null ? [lastActY, ...fcYs] : fcYs,
+        x: lastActX != null ? [lastActX, ...fcXs.slice(fcStartIdx)] : fcXs.slice(fcStartIdx),
+        y: lastActY != null ? [lastActY, ...fcYs.slice(fcStartIdx)] : fcYs.slice(fcStartIdx),
         type: "scatter", mode: "lines",
         name: `${t("load")} (${t("forecast")})`,
         yaxis: "y2",
@@ -589,16 +590,22 @@
     for (const cfg of GEN_LOAD_CARDS) {
       const el = document.getElementById(cfg.id);
       if (!el) continue;
-      el.addEventListener("toggle", async function onFirst() {
-        if (!el.open) return;
-        el.removeEventListener("toggle", onFirst);
+
+      let rendered = false;
+      const render = async () => {
+        if (rendered) return;
+        rendered = true;
         const files = cfg.tsos.map(tso => `${DATA}gen_load/${cfg.target}_${tso}.json`);
         const dataArr = await Promise.all(files.map(fetchJSON));
-        // Yield to the browser so the newly-open <details> is fully laid out
-        // before Plotly measures the container width.
         await new Promise(resolve => requestAnimationFrame(resolve));
         renderGenLoadCard(el.querySelector(".chart-container"), cfg, dataArr, glActuals);
-      });
+      };
+
+      // Render immediately if card is already open (open attribute in HTML).
+      if (el.open) render();
+
+      // Also render on first open after a user collapse.
+      el.addEventListener("toggle", () => { if (el.open) render(); });
     }
   }
 

@@ -26,7 +26,7 @@
   </p>
   <nav class="tab-bar" role="tablist">
     <button class="tab-btn active" data-tab="prices"     role="tab" data-i18n="tab_prices">Prices</button>
-    <button class="tab-btn"        data-tab="gen-load"   role="tab" data-i18n="tab_gen_load">Gen &amp; Load</button>
+    <button class="tab-btn"        data-tab="gen-load"   role="tab" data-i18n="tab_gen_load">Generation &amp; Load</button>
     <button class="tab-btn"        data-tab="monitoring" role="tab" data-i18n="tab_monitoring">Monitoring</button>
   </nav>
 </header>
@@ -72,22 +72,22 @@
       <h2 data-i18n="gen_load_section">Individual Generation &amp; Load Forecasts</h2>
       <div class="forecast-cards-grid">
 
-        <details class="forecast-card" id="card-wind-onshore">
+        <details class="forecast-card" id="card-wind-onshore" open>
           <summary data-i18n="forecast_detail_wind_onshore">Wind Onshore — 7-Day National Forecast</summary>
           <div class="chart-body"><div class="chart-container"></div></div>
         </details>
 
-        <details class="forecast-card" id="card-wind-offshore">
+        <details class="forecast-card" id="card-wind-offshore" open>
           <summary data-i18n="forecast_detail_wind_offshore">Wind Offshore — 7-Day National Forecast</summary>
           <div class="chart-body"><div class="chart-container"></div></div>
         </details>
 
-        <details class="forecast-card" id="card-solar">
+        <details class="forecast-card" id="card-solar" open>
           <summary data-i18n="forecast_detail_solar">Solar — 7-Day National Forecast</summary>
           <div class="chart-body"><div class="chart-container"></div></div>
         </details>
 
-        <details class="forecast-card" id="card-load">
+        <details class="forecast-card" id="card-load" open>
           <summary data-i18n="forecast_detail_load">Load — 7-Day National Forecast</summary>
           <div class="chart-body"><div class="chart-container"></div></div>
         </details>

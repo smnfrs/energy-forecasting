@@ -46,9 +46,10 @@
     "back_to_forecast": "Back to Forecast",
     "gen_load_errors_title": "Generation & Load Accuracy (Last 30 Days)",
     "tab_prices": "Prices",
-    "tab_gen_load": "Gen & Load",
+    "tab_gen_load": "Generation & Load",
     "tab_monitoring": "Monitoring",
-    "other_gen": "Other Generation"
+    "other_gen": "Other Gen, Grid Losses & Exports",
+    "nav_story": "The Story"
   },
   "de": {
     "title": "DE-LU Energieprognose",
@@ -99,6 +100,7 @@
     "tab_prices": "Preise",
     "tab_gen_load": "Erzeugung & Last",
     "tab_monitoring": "Monitoring",
-    "other_gen": "Sonstige Erzeugung"
+    "other_gen": "Sonst. Erzeugung, Netzverluste & Exporte",
+    "nav_story": "Die Story"
   }
 }
