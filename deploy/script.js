@@ -103,6 +103,19 @@
     return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
   }
 
+  // Convert a UTC ISO timestamp (with +00:00 / Z) to a Berlin-local naive
+  // string, matching the no-tz format produced by buildActualSeries.
+  // Using no-tz strings for both actuals and forecasts keeps Plotly x-axes
+  // aligned regardless of the viewer's browser timezone.
+  function toBerlinLocalStr(utcIso) {
+    const d = new Date(utcIso);
+    return new Intl.DateTimeFormat("sv-SE", {
+      timeZone: "Europe/Berlin",
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+    }).format(d).replace(" ", "T");
+  }
+
   function colorWithAlpha(hex, alpha) {
     const r = parseInt(hex.slice(1, 3), 16);
     const g = parseInt(hex.slice(3, 5), 16);
@@ -408,7 +421,7 @@
 
     for (const s of fcSeries) {
       traces.push({
-        x: s.data.forecasts.map(f => f.timestamp),
+        x: s.data.forecasts.map(f => toBerlinLocalStr(f.timestamp)),
         y: s.data.forecasts.map(f => f.forecast),
         type: "scatter", mode: "lines",
         name: s.name,
@@ -433,7 +446,7 @@
     // Trim to hours strictly after the last actual, then bridge with one
     // connecting point so the dashed line starts exactly where the solid line ends.
     if (load) {
-      const fcXs = load.forecasts.map(f => f.timestamp);
+      const fcXs = load.forecasts.map(f => toBerlinLocalStr(f.timestamp));
       const fcYs = load.forecasts.map(f => f.forecast);
       const lastActX = loadActual.xs[loadActual.xs.length - 1];
       const lastActY = loadActual.ys[loadActual.ys.length - 1];
@@ -482,7 +495,7 @@
       const isNational = tso === "national";
       const tsoColor = isNational ? cfg.color : (TSO_COLORS[tso] || "#888888");
       const forecasts = data.forecasts || [];
-      const ts    = forecasts.map(f => f.timestamp);
+      const ts    = forecasts.map(f => toBerlinLocalStr(f.timestamp));
       const ys    = forecasts.map(f => f.forecast);
       const lower = forecasts.map(f => f.forecast_lower ?? null);
       const upper = forecasts.map(f => f.forecast_upper ?? null);
@@ -563,10 +576,12 @@
     if (xRange) layout.xaxis.range = xRange;
 
     Plotly.newPlot(chartDiv, traces, layout, { responsive: true, displayModeBar: false });
-    // Force layout recalculation after <details> animation completes — without
-    // this, Plotly may capture zero dimensions if the container is still
-    // transitioning when the plot is first created.
+    // Two-shot resize: when all 4 cards render simultaneously after the tab
+    // becomes visible, the RAF can fire before the grid has committed its
+    // final column widths.  The 100 ms fallback ensures at least one call
+    // lands after layout has settled.
     requestAnimationFrame(() => Plotly.Plots.resize(chartDiv));
+    setTimeout(() => Plotly.Plots.resize(chartDiv), 100);
 
     controls.querySelectorAll("input[type=checkbox]").forEach(cb => {
       cb.addEventListener("change", () => {
