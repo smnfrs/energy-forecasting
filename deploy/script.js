@@ -361,7 +361,7 @@
 
   function renderGenLoadTab() {
     renderGenLoadSummary(_allData.genLoad, _allData.glActuals);
-    setupGenLoadCards(_allData.glActuals);
+    setupGenLoadCards(_allData.glActuals, _allData.glHindcast);
   }
 
   // Build hourly actuals flat arrays for a given target from glActuals
@@ -475,7 +475,7 @@
     }, { responsive: true, displayModeBar: false });
   }
 
-  function renderGenLoadCard(container, cfg, dataArr, glActuals) {
+  function renderGenLoadCard(container, cfg, dataArr, glActuals, glHindcast) {
     const nationalData = dataArr[0];
     if (!nationalData) {
       showNoData(container, "no_gen_load_data"); return;
@@ -534,6 +534,22 @@
       controls.appendChild(label);
     }
 
+    // Hindcast: model's past predictions for the same period as actuals.
+    // Comes from gen_load_hindcast.json (last 7 days of historical_forecasts parquet).
+    // Shown as dashed line so it can be visually compared against the solid actuals.
+    const hindcastStartIdx = traces.length;
+    if (glHindcast && glHindcast[cfg.target] && glHindcast[cfg.target].length) {
+      const hc = glHindcast[cfg.target];
+      traces.push({
+        x: hc.map(d => toBerlinLocalStr(d.timestamp)),
+        y: hc.map(d => d.forecast),
+        type: "scatter", mode: "lines",
+        name: `${cfg.tsoLabels["national"] || "National"} (${t("forecast")})`,
+        line: { color: cfg.color, width: 1.5, dash: "dash" },
+      });
+    }
+    const hasHindcastTrace = traces.length > hindcastStartIdx;
+
     // Actuals overlay: solid line (national aggregate)
     const actualsStartIdx = traces.length;
     if (glActuals && glActuals[cfg.target]) {
@@ -581,13 +597,14 @@
           const show = checkedTSOs.has(tso);
           for (let i = startIdx; i < endIdx; i++) vis[i] = show;
         }
+        if (hasHindcastTrace) vis[hindcastStartIdx] = checkedTSOs.has("national");
         if (hasActualsTrace) vis[actualsStartIdx] = true;
         Plotly.restyle(chartDiv, { visible: vis });
       });
     });
   }
 
-  function setupGenLoadCards(glActuals) {
+  function setupGenLoadCards(glActuals, glHindcast) {
     for (const cfg of GEN_LOAD_CARDS) {
       const el = document.getElementById(cfg.id);
       if (!el) continue;
@@ -603,7 +620,7 @@
         // its column widths, giving Plotly a zero-width container.
         // 50 ms is enough for the browser to finish the layout pass.
         await new Promise(resolve => setTimeout(resolve, 50));
-        renderGenLoadCard(el.querySelector(".chart-container"), cfg, dataArr, glActuals);
+        renderGenLoadCard(el.querySelector(".chart-container"), cfg, dataArr, glActuals, glHindcast);
       };
 
       // Render immediately if card is already open (open attribute in HTML).
@@ -937,6 +954,7 @@
       price, historyRaw, actuals, metadata,
       summary, retrainHistory, glErrors, glActuals,
       wo, woff, sol, load, gld,
+      glHindcast,
     ] = await Promise.all([
       fetchJSON(DATA + "price_forecast.json"),
       fetchJSON(DATA + "forecast_history.json"),
@@ -951,6 +969,7 @@
       fetchJSON(DATA + "gen_load/solar_national.json"),
       fetchJSON(DATA + "gen_load/load_national.json"),
       fetchJSON(DATA + "gen_load/gen_load_diff_national.json"),
+      fetchJSON(DATA + "gen_load_hindcast.json"),
     ]);
 
     const history = adaptHistory(historyRaw);
@@ -959,6 +978,7 @@
       metadata, summary, retrainHistory, glErrors, glActuals,
       actuals, history,
       genLoad: { wo, woff, sol, load, gld },
+      glHindcast: glHindcast,
     };
 
     // Prices tab renders immediately (default active tab)

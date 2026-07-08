@@ -549,6 +549,53 @@ def write_gen_load_errors() -> None:
         logger.info(f"Written gen_load_errors_summary.json ({len(result)} targets)")
 
 
+def write_gen_load_hindcast() -> None:
+    """Write last 7 days of national gen/load model predictions to gen_load_hindcast.json.
+
+    Reads y_pred from the historical_forecasts parquets (which accumulate both OOF
+    and production predictions), so the dashboard can overlay the model's past
+    predictions against SMARD actuals for a visual accuracy comparison.
+    """
+    from energy_forecasting.config import HISTORICAL_FORECASTS_DIR
+
+    targets = ["wind_onshore", "wind_offshore", "solar", "load", "gen_load_diff"]
+    result: dict[str, list] = {}
+
+    for target in targets:
+        hf_path = HISTORICAL_FORECASTS_DIR / f"{target}_DE_NATIONAL.parquet"
+        if not hf_path.exists():
+            continue
+        try:
+            hf = pd.read_parquet(hf_path)[["y_pred"]]
+        except Exception:
+            continue
+
+        idx = hf.index
+        if hasattr(idx, "tz") and idx.tz is not None:
+            hf.index = idx.tz_convert("UTC")
+        else:
+            hf.index = idx.tz_localize("UTC")
+
+        # Last 7 days relative to the most recent prediction
+        cutoff = hf.index.max() - pd.Timedelta(days=7)
+        hf = hf[hf.index > cutoff].dropna()
+        if hf.empty:
+            continue
+
+        result[target] = [
+            {
+                "timestamp": ts.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                "forecast": round(float(val), 1),
+            }
+            for ts, val in hf["y_pred"].items()
+        ]
+
+    if result:
+        DEPLOY_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        (DEPLOY_DATA_DIR / "gen_load_hindcast.json").write_text(json.dumps(result, indent=2))
+        logger.info(f"Written gen_load_hindcast.json ({len(result)} targets)")
+
+
 def backfill_price_history_from_model(n_days: int = 60) -> int:
     """Retroactively generate price forecasts for the past n_days using the production ensemble.
 
@@ -763,6 +810,7 @@ def write_outputs(
     write_gen_load_actuals()
     backfill_errors()
     write_gen_load_errors()
+    write_gen_load_hindcast()
     write_errors_summary()
     logger.info("All outputs written to deploy/data/")
 

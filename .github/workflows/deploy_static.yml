@@ -5,7 +5,7 @@ name: Deploy Static
 # (script.js, styles.css, index.html, translations.json) without waiting for
 # the full 35-minute data + inference pipeline.
 #
-# Typical run time: ~1 minute.
+# Typical run time: ~2 minutes (includes hindcast regeneration from cache).
 
 on:
   workflow_dispatch:
@@ -41,6 +41,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Restore the deploy-state cache saved by the latest daily_forecast run.
+      # This provides data/processed/historical_forecasts/ (accumulated OOF +
+      # production gen/load predictions) so we can regenerate gen_load_hindcast.json.
+      # The cache also restores deploy/data/, which the artifact download overwrites.
+      - name: Restore deploy-state cache (historical forecasts)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            deploy/data/
+            data/processed/historical_forecasts/
+          key: deploy-state-Linux-placeholder
+          restore-keys: |
+            deploy-state-Linux-
+        continue-on-error: true
+
       - name: Download forecast outputs
         run: |
           mkdir -p deploy/data
@@ -50,6 +65,14 @@ jobs:
             --dir deploy/data/
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Generate gen_load_hindcast.json from the historical_forecasts parquets
+      # (last 7 days of national model predictions vs actuals period).
+      # Falls back silently if historical_forecasts are unavailable.
+      - name: Generate hindcast
+        run: |
+          pip install --quiet pandas pyarrow
+          python3 scripts/gen_hindcast.py || echo "Hindcast generation skipped"
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
