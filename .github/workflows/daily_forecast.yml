@@ -143,6 +143,12 @@ jobs:
       - name: Run inference (skip data update)
         run: conda run -n energy-forecasting energy-forecasting deploy forecast --skip-update
 
+      - name: Generate AI narrative (non-blocking)
+        continue-on-error: true
+        run: conda run -n energy-forecasting energy-forecasting deploy narrative
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+
       - name: Persist forecast history to Release
         if: always()
         run: |

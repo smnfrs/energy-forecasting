@@ -43,6 +43,7 @@ HISTORY_PATH = DEPLOY_DATA_DIR / "forecast_history.json"
 METADATA_PATH = DEPLOY_DATA_DIR / "model_metadata.json"
 PRICE_FORECAST_PATH = DEPLOY_DATA_DIR / "price_forecast.json"
 FEATURE_AUDIT_PATH = DEPLOY_DATA_DIR / "feature_audit.json"
+PRICE_SHAP_PATH = DEPLOY_DATA_DIR / "price_shap.json"
 FEATURE_AUDIT_RUNS_DIR = DEPLOY_DATA_DIR / "feature_audit_runs"
 HISTORY_DAYS = 30
 
@@ -136,6 +137,29 @@ def write_price_forecast(price_df: pd.DataFrame, issued_at: str | None = None) -
     }
     PRICE_FORECAST_PATH.write_text(json.dumps(payload, indent=2))
     logger.info(f"Written {PRICE_FORECAST_PATH}")
+
+
+def write_price_shap(price_df: pd.DataFrame, issued_at: str | None = None) -> None:
+    """Write price_shap.json — per-category signed SHAP attribution for the D+1 forecast.
+
+    Computed by run_price_inference (see energy_forecasting/deploy/shap_attribution.py)
+    and attached to price_df.attrs["shap_attribution"]. No-ops if absent (SHAP is
+    best-effort and never blocks the numeric pipeline).
+    """
+    attribution = price_df.attrs.get("shap_attribution")
+    if not attribution:
+        return
+    DEPLOY_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "issued_at": issued_at or _now_utc(),
+        "forecast_start": attribution["forecast_start"],
+        "forecast_end": attribution["forecast_end"],
+        "base_value": attribution["base_value"],
+        "categories": attribution["categories"],
+        "category_contributions": attribution["category_contributions"],
+    }
+    PRICE_SHAP_PATH.write_text(json.dumps(payload, indent=2))
+    logger.info(f"Written {PRICE_SHAP_PATH}")
 
 
 def _append_price_history(price_df: pd.DataFrame, issued_at: str) -> None:
@@ -936,6 +960,7 @@ def write_outputs(
     """Write all forecast outputs to deploy/data/."""
     issued_at = issued_at or _now_utc()
     write_price_forecast(price_df, issued_at=issued_at)
+    write_price_shap(price_df, issued_at=issued_at)
     _append_price_history(price_df, issued_at=issued_at)
     write_gen_load_forecasts(gen_load_results, issued_at=issued_at)
     write_feature_audit(price_df, gen_load_results, issued_at=issued_at)

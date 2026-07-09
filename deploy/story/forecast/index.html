@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tomorrow's German Power Forecast, Explained</title>
+<meta name="description" content="What the DE-LU day-ahead price and generation/load forecasts say about tomorrow, and why — with a real SHAP-based breakdown of the price model's own reasoning.">
+<link rel="stylesheet" href="../story.css">
+<link rel="stylesheet" href="forecast-story.css">
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/scrollama@3.2.0/build/scrollama.min.js"></script>
+</head>
+<body>
+
+<nav class="story-nav" aria-label="Chapters">
+  <a href="#hook" class="brand">DE-LU Energy &mdash; The Forecast</a>
+  <button class="nav-link" data-chapter="hook">Start</button>
+  <button class="nav-link" data-chapter="yearly-gen-load">Generation &amp; load</button>
+  <button class="nav-link" data-chapter="yearly-price">Prices</button>
+  <button class="nav-link" data-chapter="forecast-gen-load">Gen/load forecast</button>
+  <button class="nav-link" data-chapter="forecast-price">Price forecast</button>
+  <a href="../index.html" class="dash-link">The history &rarr;</a>
+</nav>
+
+<section class="hero chapter" id="hook" data-chapter="hook">
+  <p class="kicker">Tomorrow's forecast, explained</p>
+  <h1>Renewables make German power cheaper and harder to predict, both at once.</h1>
+  <p class="stat-line">
+    <!-- TODO(user): replace with the introduction copy on system instability from
+         renewables growth + geopolitics, and why high-quality forecasting enables
+         the flexibility the grid needs. Placeholder below so the page renders. -->
+    As wind and solar take a growing share of Germany's generation mix, day-ahead prices swing
+    harder and faster than they used to. Good forecasts are what let flexible demand, storage,
+    and trading respond to that swing instead of just absorbing it. This page walks through the
+    last year of data, then explains what the model is forecasting for tomorrow and why.
+  </p>
+  <p class="scroll-hint">Scroll to begin &darr;</p>
+</section>
+
+<section class="chapter" id="yearly-gen-load" data-chapter="yearly-gen-load">
+  <div class="chapter-head">
+    <p class="chapter-kicker">The last year</p>
+    <h2>Generation and load</h2>
+  </div>
+  <div class="scroll-wrap">
+    <div class="chapter-copy">
+      <div class="narrative-box" id="narrative-gen-load-yearly">Loading AI summary&hellip;</div>
+      <p class="stat-line-group">
+        <span id="stat-fuel-mix">&hellip;</span>
+        <span id="stat-imports-exports">&hellip;</span>
+      </p>
+      <p>Daily generation by fuel type over the trailing 365 days, with total load overlaid.
+      The mix and the imports/exports figures update weekly.</p>
+    </div>
+    <div class="chapter-sticky">
+      <div class="panel">
+        <h2>Daily generation mix &amp; load &mdash; trailing year</h2>
+        <p class="sub">Stacked: generation by fuel group (MWh/day). Line: total load.</p>
+        <div id="chart-yearly-gen-load" class="chart" style="height:420px"></div>
+        <button class="table-toggle" data-table-for="chart-yearly-gen-load">View data as table</button>
+        <div class="data-table" id="table-chart-yearly-gen-load"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="chapter" id="yearly-price" data-chapter="yearly-price">
+  <div class="chapter-head">
+    <p class="chapter-kicker">The last year</p>
+    <h2>Prices</h2>
+  </div>
+  <div class="scroll-wrap">
+    <div class="chapter-copy">
+      <div class="narrative-box" id="narrative-price-yearly">Loading AI summary&hellip;</div>
+      <p class="stat-line-group">
+        <span id="stat-price-mean">&hellip;</span>
+        <span id="stat-price-extremes">&hellip;</span>
+        <span id="stat-negative-hours">&hellip;</span>
+      </p>
+      <p>Every hourly DE-LU day-ahead price over the trailing 365 days.</p>
+    </div>
+    <div class="chapter-sticky">
+      <div class="panel">
+        <h2>Hourly DE-LU price &mdash; trailing year</h2>
+        <div id="chart-yearly-price" class="chart" style="height:340px"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="chapter" id="forecast-gen-load" data-chapter="forecast-gen-load">
+  <div class="chapter-head">
+    <p class="chapter-kicker">Tomorrow &mdash; <span class="delivery-date">&hellip;</span></p>
+    <h2>Generation and load forecast</h2>
+  </div>
+  <div class="scroll-wrap">
+    <div class="chapter-copy">
+      <div class="narrative-box" id="narrative-gen-load-forecast">Loading AI summary&hellip;</div>
+      <p>Each panel compares the last 7 days of actual national generation/load (gray) to the
+      forecast for tomorrow (blue), so any extreme forecast value stands out against recent
+      history.</p>
+    </div>
+    <div class="chapter-sticky">
+      <div class="panel">
+        <h2>Wind, solar &amp; load &mdash; recent actual vs. tomorrow's forecast</h2>
+        <div id="chart-forecast-gen-load" class="chart" style="height:480px"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="chapter" id="forecast-price" data-chapter="forecast-price">
+  <div class="chapter-head">
+    <p class="chapter-kicker">Tomorrow &mdash; <span class="delivery-date">&hellip;</span></p>
+    <h2>Price forecast</h2>
+  </div>
+  <div class="scroll-wrap">
+    <div class="chapter-copy">
+      <div class="narrative-box" id="narrative-price-driver">Loading AI summary&hellip;</div>
+      <p>The bar chart is a real SHAP (SHapley Additive exPlanations) decomposition of the
+      production ensemble's own prediction — a signed EUR/MWh contribution per category,
+      relative to the model's own baseline. It explains this specific model's reasoning, not
+      verified real-world market causality.</p>
+    </div>
+    <div class="chapter-sticky">
+      <div class="panel">
+        <h2>24-hour price forecast</h2>
+        <p class="sub">Line: forecast. Band: conformal prediction interval. Gray: last 7 days actual.</p>
+        <div id="chart-forecast-price" class="chart" style="height:340px"></div>
+      </div>
+      <div class="panel">
+        <h2>What's driving tomorrow's price forecast</h2>
+        <p class="sub">Mean signed SHAP contribution per category across the 24 forecast hours.</p>
+        <div id="chart-shap" class="chart" style="height:340px"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="cta-section chapter" id="history" data-chapter="history">
+  <h2>Want the longer story?</h2>
+  <p>
+    This page explains tomorrow. For how Germany's power market got this volatile in the first
+    place &mdash; a decade of prices, the 2022 gas shock, and the renewable rise &mdash; see the
+    historical story.
+  </p>
+  <a class="cta-button" href="../index.html">Read the history &rarr;</a>
+</section>
+
+<footer class="story-footer">
+  <div class="sources">
+    <p>Data: <a href="https://smard.de" target="_blank" rel="noopener">SMARD</a> (prices,
+    generation, load) &middot; neighbouring bidding-zone prices &middot; TTF gas &amp; EU
+    carbon benchmarks.</p>
+    <p>AI summaries are generated from these published numbers and may be unavailable at times;
+    the charts and figures above are always live regardless.</p>
+    <p>Built on the same models behind the <a href="../../index.html">live DE-LU forecast dashboard</a>.</p>
+  </div>
+</footer>
+
+<script src="common.js"></script>
+<script src="forecast-story.js"></script>
+<script>
+// Nav highlighting + jump-to-chapter, driven by Scrollama step boundaries.
+const navLinks = document.querySelectorAll(".story-nav .nav-link");
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const CHAPTERS = Array.from(navLinks).map((btn) => btn.dataset.chapter);
+let currentIndex = 0;
+
+function jumpTo(chapterId) {
+  const target = document.getElementById(chapterId);
+  if (!target) return;
+  target.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+  currentIndex = CHAPTERS.indexOf(chapterId);
+  setActive(chapterId);
+}
+
+navLinks.forEach((btn) => {
+  btn.addEventListener("click", () => jumpTo(btn.dataset.chapter));
+});
+
+function setActive(chapterId) {
+  navLinks.forEach((el) => el.classList.toggle("active", el.dataset.chapter === chapterId));
+}
+
+const scroller = scrollama();
+scroller
+  .setup({ step: ".chapter", offset: 0.5 })
+  .onStepEnter((response) => {
+    const chapterId = response.element.dataset.chapter;
+    const idx = CHAPTERS.indexOf(chapterId);
+    if (idx !== -1) currentIndex = idx;
+    setActive(chapterId);
+  });
+window.addEventListener("resize", scroller.resize);
+
+window.addEventListener("keydown", (e) => {
+  if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+  const tag = (e.target.tagName || "").toLowerCase();
+  if (tag === "input" || tag === "textarea" || e.target.isContentEditable) return;
+
+  let delta = 0;
+  if (e.key === "ArrowDown" || e.key === "ArrowRight") delta = 1;
+  else if (e.key === "ArrowUp" || e.key === "ArrowLeft") delta = -1;
+  else return;
+
+  const nextIndex = Math.min(CHAPTERS.length - 1, Math.max(0, currentIndex + delta));
+  if (nextIndex === currentIndex) return;
+  e.preventDefault();
+  jumpTo(CHAPTERS[nextIndex]);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+/* Stage 10 additions on top of ../story.css's shared tokens/components. */
+
+.narrative-box {
+  background: color-mix(in srgb, var(--blue) 6%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin: 0 0 22px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  max-width: 52ch;
+}
+.narrative-box::before {
+  content: "AI summary";
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--blue);
+  margin-bottom: 6px;
+}
+.narrative-box.narrative-unavailable {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.stat-line-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 22px;
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  max-width: 46ch;
+}
+.stat-line-group strong { color: var(--text-primary); }

@@ -1082,6 +1082,30 @@ def forecast_cmd(
     )
 
 
+@deploy_app.command("narrative")
+def narrative_cmd(model: str = typer.Option("llama-3.3-70b-versatile")):
+    """Generate the AI narrative for tomorrow's forecast (non-blocking; degrades gracefully)."""
+    from energy_forecasting.deploy.narrative import generate_forecast_narrative
+
+    result = generate_forecast_narrative(model=model)
+    logger.info(
+        f"Narrative status: {result['status']}"
+        + (f" ({result['reason']})" if result.get("reason") else "")
+    )
+
+
+@deploy_app.command("narrative-yearly")
+def narrative_yearly_cmd(model: str = typer.Option("llama-3.3-70b-versatile")):
+    """Generate the weekly AI yearly-recap narrative (non-blocking; degrades gracefully)."""
+    from energy_forecasting.deploy.narrative import generate_yearly_narrative
+
+    result = generate_yearly_narrative(model=model)
+    logger.info(
+        f"Yearly narrative status: {result['status']}"
+        + (f" ({result['reason']})" if result.get("reason") else "")
+    )
+
+
 @deploy_app.command("serve")
 def serve_cmd(
     host: str = typer.Option("0.0.0.0", help="Host to bind"),

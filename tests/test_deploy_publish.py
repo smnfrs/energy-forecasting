@@ -31,6 +31,43 @@ def _gen_df(n=168) -> pd.DataFrame:
     )
 
 
+def test_write_price_shap_writes_category_contributions(tmp_path, monkeypatch):
+    import energy_forecasting.deploy.publish as pub
+
+    monkeypatch.setattr(pub, "DEPLOY_DATA_DIR", tmp_path)
+    monkeypatch.setattr(pub, "PRICE_SHAP_PATH", tmp_path / "price_shap.json")
+
+    price_df = _price_df()
+    price_df.attrs["shap_attribution"] = {
+        "base_value": 42.0,
+        "categories": ["gas", "wind"],
+        "category_contributions": {"gas": [1.0] * 24, "wind": [-2.0] * 24},
+        "feature_columns": ["ttf_ewma_24_d2", "gen_wind_on_d2"],
+        "feature_shap": [[1.0, -2.0]] * 24,
+        "forecast_start": price_df.index[0].isoformat(),
+        "forecast_end": price_df.index[-1].isoformat(),
+    }
+
+    pub.write_price_shap(price_df, issued_at="2026-06-30T08:00:00Z")
+
+    raw = json.loads((tmp_path / "price_shap.json").read_text())
+    assert raw["base_value"] == 42.0
+    assert raw["categories"] == ["gas", "wind"]
+    assert len(raw["category_contributions"]["gas"]) == 24
+    assert "feature_shap" not in raw  # per-feature matrix stays out of the published JSON
+
+
+def test_write_price_shap_noops_without_attribution(tmp_path, monkeypatch):
+    import energy_forecasting.deploy.publish as pub
+
+    monkeypatch.setattr(pub, "DEPLOY_DATA_DIR", tmp_path)
+    monkeypatch.setattr(pub, "PRICE_SHAP_PATH", tmp_path / "price_shap.json")
+
+    pub.write_price_shap(_price_df(), issued_at="2026-06-30T08:00:00Z")
+
+    assert not (tmp_path / "price_shap.json").exists()
+
+
 def test_price_json_is_valid_forecast_response(tmp_path, monkeypatch):
     """Price JSON must deserialize to a valid ForecastResponse."""
     import energy_forecasting.deploy.publish as pub

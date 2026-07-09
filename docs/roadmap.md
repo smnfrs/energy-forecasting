@@ -108,3 +108,16 @@ The signature (under-prediction at high output, in winter, at night) is most con
 - If objectives diverge by family, does that *help* ensemble diversity (different loss → different error structure) or just shuffle which model wins?
 
 ---
+
+## Dashboard
+
+### Hourly error profile — elevated evening errors
+
+**Observation (2026-07-07).** The hourly error profile chart on the monitoring tab shows noticeably higher MAE/RMSE in the evening hours (roughly 18:00–22:00 CET). This is a plausible pattern — demand peaks, renewable ramp-down, and gas/coal dispatch decisions all cluster in this window, making prices harder to predict.
+
+**Worth investigating when returning to model quality:**
+- Which models drive the evening spike — is it uniform or concentrated in one family?
+- Whether a time-of-day interaction feature (or a separate evening-hours model) would close the gap.
+- Whether the spike is stable across seasons or driven by winter peak-demand months.
+
+---

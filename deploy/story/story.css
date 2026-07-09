@@ -1,0 +1,281 @@
+/* Shared tokens + components for the Stage 9 storytelling site.
+   Used by both index.html (the real scrollytelling page) and
+   chart_prototypes.html (the standalone chart QA harness). */
+
+:root {
+  --surface-1:      #fcfcfb;
+  --page:           #f9f9f7;
+  --text-primary:   #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted:     #898781;
+  --grid:           #e1e0d9;
+  --axis:           #c3c2b7;
+  --border:         rgba(11,11,11,0.10);
+
+  --blue:    #2a78d6;
+  --aqua:    #1baf7a;
+  --yellow:  #eda100;
+  --green:   #008300;
+  --violet:  #4a3aa7;
+  --red:     #e34948;
+  --magenta: #e87ba4;
+  --orange:  #eb6834;
+  --gray-context: #b9b7ae;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface-1:      #1a1a19;
+    --page:           #0d0d0d;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --grid:           #2c2c2a;
+    --axis:           #383835;
+    --border:         rgba(255,255,255,0.10);
+
+    --blue:    #3987e5;
+    --aqua:    #199e70;
+    --yellow:  #c98500;
+    --green:   #008300;
+    --violet:  #9085e9;
+    --red:     #e66767;
+    --magenta: #d55181;
+    --orange:  #d95926;
+    --gray-context: #55544e;
+  }
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* ── Chart panel components (shared by prototypes + shell) ─────────────────── */
+.panel {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+}
+.panel h2 { font-size: 15px; margin: 0 0 2px; }
+.panel .sub { font-size: 13px; color: var(--text-secondary); margin: 0 0 12px; }
+.chart { width: 100%; }
+.table-toggle {
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  margin-top: 10px;
+}
+.data-table {
+  display: none;
+  margin-top: 12px;
+  max-height: 240px;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+}
+.data-table.open { display: block; }
+table { border-collapse: collapse; font-size: 12px; width: 100%; }
+th, td { text-align: right; padding: 4px 8px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+thead th { color: var(--text-muted); font-weight: 500; border-bottom: 1px solid var(--grid); position: sticky; top: 0; background: var(--surface-1); }
+tbody tr:nth-child(even) { background: color-mix(in srgb, var(--text-primary) 3%, transparent); }
+
+/* ── Prototype-page-only chrome ──────────────────────────────────────────────
+   (index.html doesn't use these — kept here only so chart_prototypes.html
+   can still link this one stylesheet instead of duplicating rules.) */
+.proto-page { padding: 24px; }
+.proto-page h1 { font-size: 20px; margin: 0 0 4px; }
+.proto-page .lede { color: var(--text-secondary); margin: 0 0 32px; max-width: 640px; }
+.proto-page .panel { margin-bottom: 28px; max-width: 900px; }
+
+/* ── Scrollytelling shell ─────────────────────────────────────────────────── */
+
+.story-nav {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  background: color-mix(in srgb, var(--page) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 16px;
+}
+.story-nav::-webkit-scrollbar { display: none; }
+.story-nav .brand {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-right: 12px;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.story-nav .nav-link {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 6px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.story-nav .nav-link:hover { color: var(--text-primary); background: var(--border); }
+.story-nav .nav-link.active { color: var(--blue); font-weight: 600; }
+.story-nav .dash-link {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 12.5px;
+  color: var(--blue);
+  text-decoration: none;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+.story-nav .dash-link:hover { background: var(--border); }
+
+.hero {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 72px 24px 56px;
+  text-align: left;
+}
+.hero .kicker {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--blue);
+  margin: 0 0 12px;
+}
+.hero h1 {
+  font-size: clamp(28px, 5vw, 44px);
+  line-height: 1.15;
+  margin: 0 0 20px;
+  letter-spacing: -0.01em;
+}
+.hero .stat-line {
+  font-size: 17px;
+  color: var(--text-secondary);
+  max-width: 60ch;
+  margin: 0 0 8px;
+}
+.hero .headline-number {
+  color: var(--text-primary);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.hero .scroll-hint {
+  margin-top: 40px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.chapter {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+.chapter-head {
+  max-width: 640px;
+  margin: 0 auto 8px;
+  padding: 64px 0 0;
+}
+.chapter-head .chapter-kicker {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0 0 8px;
+}
+.chapter-head h2 {
+  font-size: clamp(22px, 3.4vw, 30px);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.scroll-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 40px;
+  align-items: start;
+  padding: 24px 0 96px;
+}
+.chapter-copy {
+  padding-top: 24px;
+}
+.chapter-copy p {
+  font-size: 16px;
+  line-height: 1.65;
+  color: var(--text-secondary);
+  max-width: 46ch;
+  margin: 0 0 22px;
+}
+.chapter-copy p strong { color: var(--text-primary); }
+.chapter-sticky {
+  position: sticky;
+  top: 56px;
+}
+.chapter-sticky .panel + .panel { margin-top: 16px; }
+
+@media (max-width: 860px) {
+  .scroll-wrap {
+    grid-template-columns: 1fr;
+    gap: 20px;
+    padding-bottom: 56px;
+  }
+  .chapter-sticky {
+    position: static;
+    order: -1;
+  }
+  .chapter-copy { padding-top: 0; }
+}
+
+.cta-section {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 88px 24px 96px;
+  text-align: center;
+}
+.cta-section h2 { font-size: clamp(22px, 3.4vw, 30px); margin: 0 0 16px; }
+.cta-section p { font-size: 16px; color: var(--text-secondary); line-height: 1.6; max-width: 56ch; margin: 0 auto 28px; }
+.cta-button {
+  display: inline-block;
+  background: var(--blue);
+  color: #fff;
+  font-weight: 600;
+  font-size: 15px;
+  text-decoration: none;
+  padding: 12px 28px;
+  border-radius: 8px;
+}
+.cta-button:hover { opacity: 0.9; }
+
+.story-footer {
+  border-top: 1px solid var(--border);
+  padding: 40px 24px 56px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.8;
+}
+.story-footer a { color: var(--text-muted); }
+.story-footer .sources { max-width: 640px; margin: 0 auto; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { scroll-behavior: auto !important; }
+}

@@ -1036,6 +1036,30 @@ Extend to forecast prices across multiple European bidding zones simultaneously.
 
 ---
 
+## Stage 9: Public Storytelling Site
+
+**Goal:** A scrollytelling site for a lay audience explaining the German electricity market (price history, the 2022 gas shock, cross-border comparison, the renewable rise, negative prices), distinct from Stage 7's operational dashboard, cross-linked to it.
+
+**Detailed plan:** [`docs/stage9_story_site.md`](stage9_story_site.md)
+
+### Stage 9 Evaluation
+
+**Status:** plan drafted 2026-07-06. Steps 1-5 + 7 done 2026-07-07 — data pipeline, validated chart prototypes, and the scrollytelling shell (`deploy/story/index.html`) all built and cross-linked with the dashboard. Copy review, full a11y QA, and Playwright smoke test remain (see `docs/stage9_story_site.md`).
+
+---
+
+## Stage 10: AI Narrative Forecast Story
+
+**Goal:** A second scrollytelling page — distinct from Stage 9's decade-long historical story — explaining the *forecast*: last year's generation/load and price trends (rolling 365-day window) plus AI-generated narrative text for tomorrow's gen/load and price forecasts, including a real per-instance SHAP-based explanation of what's driving the price model's own prediction.
+
+**Detailed plan:** [`docs/stage10_ai_narrative_forecast_story.md`](stage10_ai_narrative_forecast_story.md)
+
+### Stage 10 Evaluation
+
+**Status:** implemented 2026-07-09 — yearly-recap facts pipeline, real per-instance SHAP attribution wired into `run_price_inference` (verified against real production models to ~1.7e-5 EUR/MWh), two Groq-based narrative calls (weekly yearly recap + daily forecast driver explanation), new `deploy/story/forecast/index.html` page, cross-linked with Stage 9. 535 tests passing (34 new). Not yet committed, deployed, or wired into CI secrets — see `docs/stage10_ai_narrative_forecast_story.md` for the remaining manual steps.
+
+---
+
 ## Implementation Order & Dependencies
 
 ```

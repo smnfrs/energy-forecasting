@@ -1,4 +1,4 @@
-.PHONY: help env install lint format test mlflow serve clean data update data-smard data-weather data-commodities process features-slim features-full features-max features-validate train-gen-load train-gen-load-quick train-gen-load-target forecast forecast-skip-update export-models gen-load-config retrain retrain-gen-load sync serve-dashboard open-dashboard test-dashboard
+.PHONY: help env install lint format test mlflow serve clean data update data-smard data-weather data-commodities process features-slim features-full features-max features-validate train-gen-load train-gen-load-quick train-gen-load-target forecast forecast-skip-update export-models gen-load-config retrain retrain-gen-load sync serve-dashboard open-dashboard test-dashboard story-data story-forecast-data narrative
 
 CONDA_ENV ?= energy-forecasting
 PYTHON    := conda run -n $(CONDA_ENV) python
@@ -126,3 +126,17 @@ open-dashboard:  ## Open the dashboard in the default browser
 
 test-dashboard:  ## Run Playwright smoke tests (requires serve-dashboard running)
 	cd tests && npm install && npx playwright install chromium && npx playwright test test_dashboard.js --headed
+
+# ── Stage 9 targets ──────────────────────────────────────────────────────────
+
+story-data:  ## Regenerate deploy/story/data/*.json and inline them into chart_prototypes.html + index.html
+	$(PYTHON) scripts/build_story_data.py
+
+# ── Stage 10 targets ─────────────────────────────────────────────────────────
+
+story-forecast-data:  ## Regenerate deploy/story/forecast/data/facts_yearly.json + narrative_yearly.json (run weekly)
+	$(PYTHON) scripts/build_forecast_story_data.py
+	$(EF) deploy narrative-yearly
+
+narrative:  ## Generate the daily AI narrative for tomorrow's forecast (price SHAP + gen/load note)
+	$(EF) deploy narrative

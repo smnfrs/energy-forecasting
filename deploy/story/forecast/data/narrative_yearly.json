@@ -1,0 +1,87 @@
+{
+  "generated_at": "2026-07-09T10:31:42Z",
+  "model": "llama-3.3-70b-versatile",
+  "status": "ok",
+  "reason": null,
+  "gen_load_yearly_summary": "The generation mix in the German day-ahead electricity market over the trailing year had wind at 31.2%, solar at 17.0%, hydro and biomass at 11.1%, gas at 13.9%, and coal at 21.1%. Compared to the prior year, the share of wind increased and coal decreased. Over the last 7 days, solar was the dominant source at 38.2%, while in the same week a year ago, wind led at 25.2%. The imports and exports of electricity as a percentage of domestic generation were 15.69% and 11.96% over the trailing year, respectively, and 18.24% and 7.83% over the last 7 days.",
+  "price_yearly_summary": "The mean price of electricity in the German day-ahead market over the trailing year was 93.32 EUR/MWh, which is higher than the 90.13 EUR/MWh in the prior year. The most expensive hour of the day was typically hour 19, with an average price of 141.67 EUR/MWh in the trailing year and 138.61 EUR/MWh in the prior year. The price was negative for 475 hours in the trailing year, compared to 622 hours in the prior year. Over the last 7 days, the mean price was 133.48 EUR/MWh, with the most expensive hour at 21 and an average price of 280.77 EUR/MWh, whereas in the same week a year ago, the mean price was 89.12 EUR/MWh.",
+  "facts": {
+    "generated_through": "2026-07-01T23:00:00",
+    "current_year": {
+      "fuel_mix_pct": {
+        "wind": 31.2,
+        "solar": 17.0,
+        "hydro_biomass": 11.1,
+        "nuclear": 0.0,
+        "gas": 13.9,
+        "coal": 21.1,
+        "other": 5.7
+      },
+      "imports_pct_of_domestic_gen": 15.69,
+      "exports_pct_of_domestic_gen": 11.96,
+      "mean_price_eur_mwh": 93.32,
+      "most_expensive_hour": 19,
+      "most_expensive_hour_avg_price": 141.67,
+      "least_expensive_hour": 13,
+      "least_expensive_hour_avg_price": 46.92,
+      "negative_price_hours": 475
+    },
+    "prior_year": {
+      "fuel_mix_pct": {
+        "wind": 28.7,
+        "solar": 16.6,
+        "hydro_biomass": 11.9,
+        "nuclear": 0.0,
+        "gas": 13.3,
+        "coal": 23.4,
+        "other": 6.1
+      },
+      "imports_pct_of_domestic_gen": 17.52,
+      "exports_pct_of_domestic_gen": 11.07,
+      "mean_price_eur_mwh": 90.13,
+      "most_expensive_hour": 19,
+      "most_expensive_hour_avg_price": 138.61,
+      "least_expensive_hour": 13,
+      "least_expensive_hour_avg_price": 46.83,
+      "negative_price_hours": 622
+    },
+    "last_7_days": {
+      "fuel_mix_pct": {
+        "wind": 13.1,
+        "solar": 38.2,
+        "hydro_biomass": 12.0,
+        "nuclear": 0.0,
+        "gas": 8.4,
+        "coal": 21.9,
+        "other": 6.4
+      },
+      "imports_pct_of_domestic_gen": 18.24,
+      "exports_pct_of_domestic_gen": 7.83,
+      "mean_price_eur_mwh": 133.48,
+      "most_expensive_hour": 21,
+      "most_expensive_hour_avg_price": 280.77,
+      "least_expensive_hour": 14,
+      "least_expensive_hour_avg_price": 51.74,
+      "negative_price_hours": 3
+    },
+    "same_7_days_prior_year": {
+      "fuel_mix_pct": {
+        "wind": 25.2,
+        "solar": 31.3,
+        "hydro_biomass": 11.0,
+        "nuclear": 0.0,
+        "gas": 8.8,
+        "coal": 18.6,
+        "other": 5.1
+      },
+      "imports_pct_of_domestic_gen": 14.63,
+      "exports_pct_of_domestic_gen": 10.65,
+      "mean_price_eur_mwh": 89.12,
+      "most_expensive_hour": 20,
+      "most_expensive_hour_avg_price": 207.17,
+      "least_expensive_hour": 13,
+      "least_expensive_hour_avg_price": 21.49,
+      "negative_price_hours": 12
+    }
+  }
+}
