@@ -98,6 +98,48 @@ def test_trained_feature_columns_falls_back_to_model_json(tmp_path, monkeypatch)
     assert pi._trained_feature_columns("custom_version", "price_custom_version") == ["a", "b"]
 
 
+def test_ema_overlay_applied_after_d1_extension(monkeypatch):
+    """EMA overlay must run on extended_df (includes D+1 rows) not on merged df.
+
+    Before the fix, _overlay_ema_forecasts was called on the raw merged frame,
+    which never contains D+1 rows (the merge step drops future rows with no
+    price). The D+1 prog_* values were then forward-filled from D rather than
+    using the gen/load model's actual D+1 predictions.
+    """
+    overlay_indices: list[pd.DatetimeIndex] = []
+
+    def fake_overlay(df: pd.DataFrame) -> pd.DataFrame:
+        overlay_indices.append(df.index.copy())
+        return df
+
+    monkeypatch.setattr(pi, "_extend_to_forecast_date", lambda df, forecast_date: (
+        pd.concat([df, pd.DataFrame({"target_price": [np.nan] * 24},
+                                    index=pd.date_range("2026-07-08 00:00", periods=24, freq="h"))]),
+        pd.date_range("2026-07-08 00:00", periods=24, freq="h"),
+    ))
+    # The import is inside run_price_inference, so patch through the source module.
+    monkeypatch.setattr("energy_forecasting.modeling.price._overlay_ema_forecasts", fake_overlay)
+    monkeypatch.setattr(pi, "_build_feature_matrices", lambda *a, **kw: {})
+    monkeypatch.setattr(pi, "production_model_names", lambda cfg: [])
+    monkeypatch.setattr(pi, "load_ensemble_config", lambda: {"models": [], "ensemble": {"weights": {}}})
+
+    df = _merged_frame(start="2026-07-05 00:00", hours=72)
+    monkeypatch.setattr(pd, "read_parquet", lambda path: df)
+
+    try:
+        pi.run_price_inference()
+    except RuntimeError:
+        pass  # "No production price models" — expected; we only care overlay was called on extended df
+
+    assert overlay_indices, "EMA overlay was never called"
+    last_overlay_idx = overlay_indices[-1]
+    d1_ts = pd.Timestamp("2026-07-08 00:00")
+    assert d1_ts in last_overlay_idx, (
+        f"EMA overlay was called before D+1 extension — D+1 rows not present. "
+        f"Last overlay index ended at {last_overlay_idx[-1]}"
+    )
+
+
 def test_engineer_features_raises_for_missing_trained_columns(monkeypatch):
     idx = pd.date_range("2026-07-07 00:00", periods=24, freq="h")
     df = pd.DataFrame({"target_price": np.nan}, index=idx)

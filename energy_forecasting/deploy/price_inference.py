@@ -226,14 +226,15 @@ def run_price_inference(
     df = pd.read_parquet(merged_path)
     logger.info(f"Loaded merged data: {df.shape}, last={df.index[-1]}")
 
-    # Apply EMA overlay — uses today's live gen/load forecasts from
-    # historical_forecasts/*.parquet to update prog_* columns
+    # Extend to the intended D+1 delivery date first, then apply the EMA
+    # overlay so it covers D+1 rows. The merge step drops future rows (no price
+    # yet), so D+1 prog_* would otherwise be forward-filled from D rather than
+    # using our gen/load model's actual D+1 predictions.
+    extended_df, d1_index = _extend_to_forecast_date(df, forecast_date=forecast_date)
+
     from energy_forecasting.modeling.price import _overlay_ema_forecasts
 
-    df = _overlay_ema_forecasts(df)
-
-    # Extend to the intended D+1 delivery date.
-    extended_df, d1_index = _extend_to_forecast_date(df, forecast_date=forecast_date)
+    extended_df = _overlay_ema_forecasts(extended_df)
 
     # Identify which feature_versions are needed (non-zero-weight models only)
     prod_names = set(production_model_names(ensemble_config))
@@ -253,7 +254,10 @@ def run_price_inference(
     weights = ensemble_config["ensemble"]["weights"]
     predictions: list[np.ndarray] = []
     used_weights: list[float] = []
+    used_names: list[str] = []
     model_predictions: dict[str, list[float]] = {}
+    loaded_models: dict[str, object] = {}
+    feature_matrices_for_shap: dict[str, pd.DataFrame] = {}
 
     for model_name, entry in model_entries.items():
         fv = entry["feature_version"]
@@ -280,6 +284,16 @@ def run_price_inference(
         model_predictions[model_name] = y_pred.tolist()
         predictions.append(y_pred)
         used_weights.append(weights[model_name])
+        used_names.append(model_name)
+        loaded_models[model_name] = model
+        # Keyed by model name, not feature_version: two production models can share a
+        # feature_version but use different scaler instances, so each model's SHAP must
+        # run against its own (possibly scaled) feature matrix, not a version-shared one.
+        feature_matrices_for_shap[model_name] = (
+            pd.DataFrame(X_to_predict, index=X_d1.index, columns=X_d1.columns)
+            if scaler is not None
+            else X_d1
+        )
         logger.debug(
             f"  {model_name}: mean={y_pred.mean():.1f} EUR/MWh "
             f"(weight={weights[model_name]:.3f})"
@@ -312,6 +326,24 @@ def run_price_inference(
         index=d1_index,
     )
     result.attrs["model_predictions"] = model_predictions
+
+    try:
+        from energy_forecasting.deploy.shap_attribution import compute_price_shap
+
+        shap_attribution = compute_price_shap(
+            model_entries=model_entries,
+            loaded_models=loaded_models,
+            feature_matrices=feature_matrices_for_shap,
+            weights=weights,
+            used_weights=used_weights,
+            used_names=used_names,
+        )
+        shap_attribution["forecast_start"] = d1_index[0].isoformat()
+        shap_attribution["forecast_end"] = d1_index[-1].isoformat()
+        result.attrs["shap_attribution"] = shap_attribution
+    except Exception:
+        logger.exception("SHAP attribution failed; continuing without it (narrative degrades gracefully)")
+
     result.attrs["feature_audit"] = {
         "target": "price",
         "region": "DE_LU",
