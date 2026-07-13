@@ -1,0 +1,25 @@
+{
+  "exported_at": "2026-07-13T18:59:02+00:00",
+  "archive_reason": "pre-forecast-contract; leaky/non-comparable",
+  "pre_contract_feature_contract": "prog_leaky",
+  "experiments": [
+    {
+      "registry_key": "price_feature_selection",
+      "display_path": "price/feature_selection",
+      "run_count": 71,
+      "exported_at": "2026-07-13T18:59:03+00:00"
+    },
+    {
+      "registry_key": "price_model_training",
+      "display_path": "price/model_training",
+      "run_count": 6167,
+      "exported_at": "2026-07-13T18:59:07+00:00"
+    },
+    {
+      "registry_key": "price_production",
+      "display_path": "price/production",
+      "run_count": 5,
+      "exported_at": "2026-07-13T18:59:07+00:00"
+    }
+  ]
+}

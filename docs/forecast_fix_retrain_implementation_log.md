@@ -30,3 +30,14 @@ Implementation notes for the second checkpoint:
 Discovery: `SHORT_NAMES` already retains `prog_*` aliases only for backward-compatible parsing/audit while production price validation rejects `prog_`/`pct_prog_` tokens, matching the plan's intended boundary.
 
 Validation: focused suite passed: `conda run -n energy-forecasting pytest tests/test_mlflow_utils.py tests/test_price.py tests/test_5c_derivations.py tests/test_forecast_inputs.py tests/test_deploy_inference.py tests/test_cli.py -q` (40 tests), plus `python -m py_compile` over touched modules.
+
+## 2026-07-13 — Preservation and MLflow Archive
+
+Preservation exports were written to `docs/archive/price_pre_forecast_contract/` before dataset regeneration or retraining:
+
+- `price_feature_selection`: 71 runs exported and archived.
+- `price_model_training`: 6,167 runs exported and archived. This is higher than the 5,000-run count in the plan; the live MLflow store had additional price tuning runs.
+- `price_production`: 5 runs exported and archived.
+- Current `models/ensemble_config.json`, `models/price_feature_cols.json`, production hyperparameters, ensemble weights, conformal settings, and the leakage-inflated 11.148 MAE baseline were copied into the archive.
+
+Decision/change during implementation: the initial MLflow API archive pass was interrupted because per-run `set_tag` calls were too slow for 6,243 runs. The final archive operation uses a single idempotent SQLite transaction that sets `archived=true`, `archive_reason=pre-forecast-contract; leaky/non-comparable`, and `feature_contract=prog_leaky` for experiments `price/feature_selection`, `price/model_training`, and `price/production`. Verification query showed all 6,243 price runs have both archive and `prog_leaky` tags. No artifacts were deleted.

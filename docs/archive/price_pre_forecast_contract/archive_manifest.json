@@ -1,0 +1,23 @@
+{
+  "archived_at": "2026-07-13T18:59:07+00:00",
+  "archive_reason": "pre-forecast-contract; leaky/non-comparable",
+  "feature_contract": "prog_leaky",
+  "method": "sqlite_transaction",
+  "experiments": [
+    {
+      "registry_key": "price_feature_selection",
+      "display_path": "price/feature_selection",
+      "archived_runs": 71
+    },
+    {
+      "registry_key": "price_model_training",
+      "display_path": "price/model_training",
+      "archived_runs": 6167
+    },
+    {
+      "registry_key": "price_production",
+      "display_path": "price/production",
+      "archived_runs": 5
+    }
+  ]
+}
