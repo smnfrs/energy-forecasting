@@ -64,3 +64,11 @@ The combined regeneration command was interrupted after `slim` and `full` comple
 - Regenerated dataset schemas contain no `prog_`, `pct_prog_`, or `prognostiziert` tokens.
 
 Decision/change during implementation: the first residual identity gate incorrectly checked all fallback rows, including SMARD rows where operator residual is not required to equal the derived wind/PV sum. The gate was corrected to the plan's intended scope: 2022+ rows sourced from own forecast artifacts.
+
+## 2026-07-13 — Optuna Study Isolation Guard
+
+Before launching Stage A/B, existing `data/optuna` contents showed pre-contract study DBs with names like `fs_rfecv_optimum__LGBMRegressor__stage2_grid.db`. Because the tuning code used only `{feature_version}__{model_type}__{step}` as the study name with `load_if_exists=True`, a retrain that rediscovered `fs_rfecv_optimum` or `fs_shap_top*` could have silently resumed leaky pre-contract trials.
+
+Code change: Optuna study names now include `FEATURE_CONTRACT`, e.g. `forecast_v1__fs_rfecv_optimum__LGBMRegressor__stage2_grid`. This keeps crash-resume semantics within the new contract while isolating the old `prog_leaky` search DBs.
+
+Validation: `conda run -n energy-forecasting pytest tests/test_tuning.py -q` passed (14 tests), plus `py_compile` for `tuning.py`.

@@ -19,6 +19,7 @@ from energy_forecasting.modeling.tuning import (
     _evaluate_config,
     _linear_search_space,
     _make_model,
+    _study_name,
 )
 
 # ── Model factory ────────────────────────────────────────────────
@@ -160,3 +161,11 @@ def test_evaluate_config_tree_with_none_scaler(tiny_xy):
         weight_half_life=None,
     )
     assert metrics["cv_mae"] > 0
+
+
+# ── Optuna study naming ───────────────────────────────────────────
+
+
+def test_study_name_is_scoped_by_feature_contract():
+    name = _study_name("fs_rfecv_optimum", "LGBMRegressor", "stage2_grid")
+    assert name == "forecast_v1__fs_rfecv_optimum__LGBMRegressor__stage2_grid"

@@ -131,6 +131,11 @@ def _study_storage(study_name: str) -> optuna.storages.RDBStorage:
     return optuna.storages.RDBStorage(f"sqlite:///{OPTUNA_DIR / f'{study_name}.db'}")
 
 
+def _study_name(feature_version: str, model_type: str, step: str) -> str:
+    """Return the Optuna study name scoped to the active feature contract."""
+    return f"{FEATURE_CONTRACT}__{feature_version}__{model_type}__{step}"
+
+
 def _grid_study(
     study_name: str,
     search_space: dict[str, list[Any]],
@@ -217,7 +222,7 @@ def tune_tree_model(
     probe = PRICE_TREE_WEIGHT_PROBE[model_type]
 
     # Stage 1 — weight pinning.
-    weight_study_name = f"{feature_version}__{model_type}__stage1_weight"
+    weight_study_name = _study_name(feature_version, model_type, "stage1_weight")
     weight_study = _grid_study(
         weight_study_name,
         {"weight_half_life_idx": list(range(len(WEIGHT_HALF_LIVES)))},
@@ -264,7 +269,7 @@ def tune_tree_model(
 
     # Stage 2 — hyperparam grid with weight fixed.
     grid_configs = PRICE_TREE_GRID[model_type]
-    grid_study_name = f"{feature_version}__{model_type}__stage2_grid"
+    grid_study_name = _study_name(feature_version, model_type, "stage2_grid")
     grid_study = _grid_study(
         grid_study_name,
         {"grid_idx": list(range(len(grid_configs)))},
@@ -345,7 +350,7 @@ def tune_linear_model(
     cv = TimeSeriesSplitter(n_splits=cv_folds, mode=cv_mode)
 
     search_space = _linear_search_space(model_type)
-    study_name = f"{feature_version}__{model_type}__linear_grid"
+    study_name = _study_name(feature_version, model_type, "linear_grid")
     study = _grid_study(study_name, search_space)
     alphas = LINEAR_ALPHA_GRID[model_type]
 
