@@ -18,7 +18,7 @@ Automated daily forecasts running end-to-end (data → gen/load inference → pr
 
 **2. Upstream exog chaining at inference.** At training, `_load_upstream_actuals` provides ground-truth SMARD values for upstream targets (wind/solar as features for load, etc.). At inference this must be replaced by the model's own forecasts from the previous inference step. This asymmetry is intentional (mirrors EMA) but requires careful orchestration: wind/solar forecasts must be ready before load inference starts.
 
-**3. Extending the merged dataset to the forecast date.** The price model needs features for *tomorrow* (D+1 delivery hours 0–23). The merged dataset ends at the most-recent SMARD observation. The extension must forward-fill known features (open commodity prices, SMARD day-ahead forecasts) and leave unavailable features at their D-1 values or NaN, consistent with the feature list's availability rules.
+**3. Extending the merged dataset to the forecast date.** The price model needs features for *tomorrow* (D+1 delivery hours 0–23). The merged dataset ends at the most-recent SMARD observation. The extension may populate only features whose availability is valid at the 08:00 UTC run. D+1 generation/load forecast features must come from own forecast artifacts via `forecast_*` columns; SMARD D+1 `prognostizierte_*` values must not be used or forward-filled.
 
 **4. Model storage.** All models currently live in MLflow (sqlite DB + artifact filesystem). For CI/CD, models need to be serializable to disk and downloadable at workflow time. A `gen_load_config.json` needs to record the best (target, region) run_id and config. The price ensemble is already in `models/ensemble_config.json` with run_ids.
 
@@ -145,25 +145,41 @@ Sum per-TSO forecasts to national level, matching the `export_national_forecasts
 
 **Function:** `run_price_inference(forecast_date: date | None = None) -> pd.DataFrame`
 
-**Steps:**
-1. Load `models/ensemble_config.json`
-2. Load `data/processed/merged.parquet`
-3. Apply EMA overlay: call `_overlay_ema_forecasts` from `modeling/price.py` — this uses the freshly-updated `historical_forecasts/*.parquet` with today's live gen/load forecasts
-4. Extend dataset to D+1 forecast horizon via `_extend_to_forecast_date(df)`:
-   - Find the last row with `target_price` not NaN (the last known auction result, typically D-1)
-   - Add 24 rows for D+1 delivery hours 0–23
-   - Forward-fill: commodity prices (already daily), regime indicators, open market data
-   - For SMARD day-ahead forecasts (`prognostizierte_*`): use the live values already fetched during `update_data` (SMARD publishes D+1 generation forecasts at ~18:00 CET D-1)
-   - The existing `prognostizierte_*` columns for D+1 hours come from SMARD; the EMA overlay (step 3) replaces them with live gen/load model outputs for the D+1 period
-5. Build price feature dataset: call `engineer_features(df_extended, feature_list)` for each unique `feature_version` in the ensemble config
-6. For each base model in ensemble config:
-   - Load `models/price/{run_id}.joblib`
-   - Slice the appropriate feature version's dataset to D+1 rows
-   - Apply scaler (if any) fitted on training data (stored as part of the pipeline)
-   - `model.predict(X_d1)` → 24 scalar predictions
-7. Apply ensemble weights (from `ensemble_config.json`): `y_blend = Σ(w_i × y_i)`
-8. Apply conformal PI: `y_lower = y_blend - conformal_q`, `y_upper = y_blend + conformal_q`
-9. Return DataFrame with 24 rows, columns `[forecast, forecast_lower, forecast_upper]`
+**Status update (2026-07-13):** the original Stage 6 plan assumed SMARD D+1 `prognostizierte_*` values could be present or forward-filled for the 08:00 UTC forecast run. That assumption is wrong. This section is superseded by the forecast-column contract in `docs/forecast_fix.md`: live D+1 price inference must use own gen/load forecast artifacts and must not use SMARD D+1 values.
+
+**Corrected steps:**
+1. Load `models/ensemble_config.json`.
+2. Load `data/processed/merged.parquet`.
+3. Extend the dataset to the D+1 forecast horizon via `_extend_to_forecast_date(df)`:
+   - Find the last row with `target_price` not NaN.
+   - Add 24 rows for D+1 delivery hours 0–23.
+   - Set `target_price = NaN` for the forecast rows.
+   - Populate only non-forecast features whose availability is valid at 08:00 UTC.
+4. Materialise source-neutral forecast columns with `build_forecast_columns(extended_df, strict_index=d1_index)`:
+   - `forecast_load`
+   - `forecast_gen_wind_on`
+   - `forecast_gen_wind_off`
+   - `forecast_gen_solar`
+   - `forecast_gen_wind_pv`
+   - `forecast_gen_total`
+   - `forecast_gen_other`
+   - `forecast_residual_load`
+5. In strict D+1 mode, read the five own forecast artifacts in `data/processed/historical_forecasts/`:
+   - `wind_onshore_DE_NATIONAL.parquet`
+   - `wind_offshore_DE_NATIONAL.parquet`
+   - `solar_DE_NATIONAL.parquet`
+   - `load_DE_NATIONAL.parquet`
+   - `gen_load_diff_DE_NATIONAL.parquet`
+6. Fail closed if any of those five artifacts lacks complete non-NaN `y_pred` coverage for the 24 D+1 hours. Do not fall back to SMARD, actuals, or broad forward-fill for D+1 forecast inputs.
+7. Build price feature datasets from `forecast_*` and `pct_forecast_*` names only. Raw `prognostizierte_*`, old `prog_*`, and old `pct_prog_*` names must not appear in production price feature lists.
+8. For each base model in the ensemble config:
+   - Load `models/price/{run_id}.joblib`.
+   - Slice the appropriate feature version's dataset to D+1 rows.
+   - Apply the saved pipeline preprocessing.
+   - Predict 24 scalar prices.
+9. Apply ensemble weights from `ensemble_config.json`.
+10. Apply conformal PI.
+11. Return a DataFrame with 24 rows and columns `[forecast, forecast_lower, forecast_upper]`.
 
 **Dataset extension detail (`_extend_to_forecast_date`):**
 
@@ -178,12 +194,22 @@ new_index = pd.date_range(
 )
 ```
 
+`_extend_to_forecast_date` should create the rows and mask the price target. It should not construct D+1 generation/load forecast values from SMARD `prognostizierte_*` columns.
+
 Features that need special handling for D+1 rows:
-- Commodity prices: forward-fill from last known row (daily data, known by midnight)
-- `regime_*` indicators: compute from date
-- `prognostizierte_*` columns: SMARD publishes these for D+1 around 18:00 CET. If already fetched (update_data ran after 18:00), they're in the raw data. If not, forward-fill from yesterday.
-- All D-1 lag features (`price_d1`, `price_h24`, etc.): these reference yesterday's data which IS in the dataset, so rolling/shift operations on the extended df naturally populate them correctly.
-- After the dataset extension, run `engineer_features` normally — the DSL handles lag computation.
+- `forecast_*`: strict own forecast artifact coverage via `build_forecast_columns(..., strict_index=d1_index)`.
+- Commodity prices: forward-fill only where the availability rule says the value is known by the 08:00 UTC run.
+- `regime_*` indicators: compute deterministically from the delivery date.
+- Lag features (`price_d1`, `price_h24`, etc.): derive from historical rows already present in the dataset.
+- Raw `prognostizierte_*`: keep for audit and historical fallback only; do not use as live D+1 price features.
+
+Forecast derivations:
+```text
+forecast_gen_wind_pv   = forecast_gen_wind_on + forecast_gen_wind_off + forecast_gen_solar
+forecast_gen_total     = forecast_load + gen_load_diff_forecast
+forecast_gen_other     = forecast_gen_total - forecast_gen_wind_pv
+forecast_residual_load = forecast_load - forecast_gen_wind_pv
+```
 
 **Note on scaler:** The price model pipeline is a `Pipeline([("scaler", scaler), ("model", TransformedTargetRegressor(...))])` (from `training.py`). When exported as a joblib, the scaler is part of the pipeline and will apply its learned statistics to the inference row. Linear models use RobustScaler; tree models use `none`. This is all handled transparently by the saved pipeline artifact.
 
@@ -313,7 +339,7 @@ app.include_router(router)
 name: Daily Forecast
 on:
   schedule:
-    - cron: "0 8 * * *"  # 08:00 UTC = 09:00/10:00 CET, after D+1 SMARD forecasts publish
+    - cron: "0 8 * * *"  # 08:00 UTC public forecast run; uses own gen/load forecasts, not SMARD D+1 forecasts
   workflow_dispatch:
 
 jobs:
@@ -486,7 +512,7 @@ sync:          # pull latest data/models from GitHub Release
 
 **OQ2: Weather data availability at inference time.** `forecast.parquet` (Open-Meteo "current forecast" endpoint) provides 14-day ahead forecasts and is updated at each data collection run. At 08:00 UTC, D+1 (tomorrow) through D+14 forecast weather is available. Verify the `forecast.parquet` timestamp range includes D+1 hours 0–23 UTC (=D+1 hours 1–24 CET during winter, 2–25 CET during summer, adjusted for delivery hours).
 
-**OQ3: Price feature extension with D+1 SMARD forecasts.** SMARD publishes day-ahead generation forecasts (`prognostizierte_*`) for D+1 around 18:00 CET D-1. The daily workflow runs at 08:00 UTC = 09:00/10:00 CET D, so these forecasts were published ~15 hours earlier and are already in the raw SMARD data. Confirm that `SmardSource.update()` actually fetches these forecast values (as opposed to only fetching settled actual data).
+**OQ3: Price forecast feature availability.** Resolved 2026-07-13: SMARD D+1 `prognostizierte_*` values are not valid inputs for the 08:00 UTC price forecast. D+1 generation/load price features must be source-neutral `forecast_*` columns backed by complete own forecast artifacts, with strict failure if coverage is incomplete. See `docs/forecast_fix.md`.
 
 **OQ4: What to do about gen/load PI at inference time.** The gen/load models that use recursive lags bypass MAPIE (as documented in 5b). Their `y_lower/y_upper` columns are NaN in historical_forecasts parquets. At inference, we apply the `conformal_quantile` from the ensemble run (if the best run was an ensemble) or from the base model's run metrics. If the chosen model is a recursive-lag model with no conformal calibration, report PI as None in the API response.
 

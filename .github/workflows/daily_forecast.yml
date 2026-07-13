@@ -2,7 +2,7 @@ name: Daily Forecast
 
 on:
   schedule:
-    # 08:00 UTC = 09:00 CET / 10:00 CEST — after D+1 SMARD generation forecasts publish
+    # 08:00 UTC = 09:00 CET / 10:00 CEST; D+1 price features use own gen/load forecasts, not SMARD forecasts
     - cron: "0 8 * * *"
   workflow_dispatch:
 
