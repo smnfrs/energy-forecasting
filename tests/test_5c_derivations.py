@@ -3,8 +3,6 @@ gen/load forecast loader, and the engine branches that wire them together."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import pytest
@@ -16,10 +14,6 @@ from energy_forecasting.features.market import (
     compute_neg_price_stats,
 )
 from energy_forecasting.features.validation import validate_features
-from energy_forecasting.modeling.gen_load_forecasts import (
-    FORECAST_TARGETS,
-    load_gen_load_forecasts,
-)
 
 # ── compute_eeg_regime ──────────────────────────────────────────────
 
@@ -129,145 +123,11 @@ def test_pct_forecast_per_technology_emits_three_columns():
     assert out["_derived_pct_forecast_wind_off"].iloc[0] == pytest.approx(6_000 / 60_000)
 
 
-# ── load_gen_load_forecasts ─────────────────────────────────────────
-
-
-def _write_forecast_parquet(path: Path, idx: pd.DatetimeIndex, value: float):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(
-        {
-            "y_true": np.full(len(idx), value),
-            "y_pred": np.full(len(idx), value),
-            "y_lower": np.nan,
-            "y_upper": np.nan,
-        },
-        index=idx,
-    ).to_parquet(path)
-
-
-@pytest.fixture
-def fake_forecasts_root(tmp_path):
-    idx = pd.date_range("2026-02-01", "2026-02-28 23:00", freq="h", tz="UTC")
-    values = {
-        "wind_onshore": 10_000.0,
-        "wind_offshore": 4_000.0,
-        "solar": 2_000.0,
-        "load": 50_000.0,
-        "gen_load_diff": -1_000.0,
-    }
-    for target, value in values.items():
-        _write_forecast_parquet(tmp_path / f"{target}_DE_NATIONAL.parquet", idx, value)
-    return tmp_path
-
-
-def test_load_gen_load_forecasts_returns_all_columns(fake_forecasts_root):
-    idx = pd.date_range("2026-02-05", "2026-02-07 23:00", freq="h", tz="UTC")
-    out = load_gen_load_forecasts(idx, root=fake_forecasts_root)
-    assert list(out.columns) == [
-        "_derived_forecast_wind_on",
-        "_derived_forecast_wind_off",
-        "_derived_forecast_solar",
-        "_derived_forecast_load",
-        "_derived_forecast_gen_load_diff",
-        "_derived_forecast_residual",
-    ]
-    assert out.index.equals(idx)
-    # residual = load - wind_on - wind_off - solar = 50000 - 10000 - 4000 - 2000 = 34000
-    assert out["_derived_forecast_residual"].iloc[0] == pytest.approx(34_000.0)
-
-
-def test_load_gen_load_forecasts_subset(fake_forecasts_root):
-    idx = pd.date_range("2026-02-10", "2026-02-10 03:00", freq="h", tz="UTC")
-    out = load_gen_load_forecasts(
-        idx,
-        columns=["_derived_forecast_load", "_derived_forecast_solar"],
-        root=fake_forecasts_root,
-    )
-    assert list(out.columns) == ["_derived_forecast_load", "_derived_forecast_solar"]
-
-
-def test_load_gen_load_forecasts_residual_pulls_inputs(fake_forecasts_root):
-    idx = pd.date_range("2026-02-10", "2026-02-10 03:00", freq="h", tz="UTC")
-    out = load_gen_load_forecasts(
-        idx, columns=["_derived_forecast_residual"], root=fake_forecasts_root
-    )
-    # The function returns only what was requested; residual must equal
-    # load - wind_on - wind_off - solar (50000 - 10000 - 4000 - 2000).
-    assert list(out.columns) == ["_derived_forecast_residual"]
-    assert out.iloc[0, 0] == pytest.approx(34_000.0)
-
-
-def test_load_gen_load_forecasts_missing_file_raises(tmp_path):
-    idx = pd.date_range("2026-02-01", "2026-02-01 03:00", freq="h", tz="UTC")
-    with pytest.raises(FileNotFoundError, match="missing historical_forecasts parquet"):
-        load_gen_load_forecasts(idx, root=tmp_path)
-
-
-def test_load_gen_load_forecasts_unknown_column_raises(fake_forecasts_root):
-    idx = pd.date_range("2026-02-01", "2026-02-01 03:00", freq="h", tz="UTC")
-    with pytest.raises(ValueError, match="Unknown gen/load forecast column"):
-        load_gen_load_forecasts(idx, columns=["_derived_forecast_nope"], root=fake_forecasts_root)
-
-
-def test_load_gen_load_forecasts_handles_naive_index(fake_forecasts_root):
-    # Merged dataset uses tz-naive UTC; loader must align to source's tz.
-    idx = pd.date_range("2026-02-05", "2026-02-05 03:00", freq="h")
-    out = load_gen_load_forecasts(idx, root=fake_forecasts_root)
-    assert out.index.tz is None
-    assert out["_derived_forecast_load"].notna().all()
-
-
-def test_load_gen_load_forecasts_converts_utc_to_naive_berlin_winter(tmp_path):
-    src_idx = pd.DatetimeIndex([pd.Timestamp("2026-01-01 00:00", tz="UTC")])
-    _write_forecast_parquet(tmp_path / "load_DE_NATIONAL.parquet", src_idx, 123.0)
-    target_idx = pd.DatetimeIndex([pd.Timestamp("2026-01-01 01:00")])
-    out = load_gen_load_forecasts(target_idx, columns=["_derived_forecast_load"], root=tmp_path)
-    assert out["_derived_forecast_load"].iloc[0] == pytest.approx(123.0)
-
-
-def test_load_gen_load_forecasts_converts_utc_to_naive_berlin_summer(tmp_path):
-    src_idx = pd.DatetimeIndex([pd.Timestamp("2026-07-01 00:00", tz="UTC")])
-    _write_forecast_parquet(tmp_path / "load_DE_NATIONAL.parquet", src_idx, 456.0)
-    target_idx = pd.DatetimeIndex([pd.Timestamp("2026-07-01 02:00")])
-    out = load_gen_load_forecasts(target_idx, columns=["_derived_forecast_load"], root=tmp_path)
-    assert out["_derived_forecast_load"].iloc[0] == pytest.approx(456.0)
-
-
-def test_load_gen_load_forecasts_averages_dst_fallback_duplicate(tmp_path):
-    path = tmp_path / "load_DE_NATIONAL.parquet"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    src_idx = pd.DatetimeIndex(
-        [
-            pd.Timestamp("2026-10-25 00:00", tz="UTC"),
-            pd.Timestamp("2026-10-25 01:00", tz="UTC"),
-        ]
-    )
-    pd.DataFrame(
-        {"y_true": [10.0, 30.0], "y_pred": [10.0, 30.0], "y_lower": np.nan, "y_upper": np.nan},
-        index=src_idx,
-    ).to_parquet(path)
-    target_idx = pd.DatetimeIndex([pd.Timestamp("2026-10-25 02:00")])
-    out = load_gen_load_forecasts(target_idx, columns=["_derived_forecast_load"], root=tmp_path)
-    assert out["_derived_forecast_load"].iloc[0] == pytest.approx(20.0)
-
-
-def test_forecast_targets_cover_documented_short_names():
-    # Sanity that the loader knows about each forecast short name from columns.py
-    expected = {
-        "_derived_forecast_wind_on",
-        "_derived_forecast_wind_off",
-        "_derived_forecast_solar",
-        "_derived_forecast_load",
-        "_derived_forecast_gen_load_diff",
-    }
-    assert set(FORECAST_TARGETS.keys()) == expected
-
-
 # ── Engine integration ─────────────────────────────────────────────
 
 
 @pytest.fixture
-def merged_like_df(fake_forecasts_root):
+def merged_like_df():
     idx = pd.date_range("2026-02-10", "2026-02-12 23:00", freq="h", tz="UTC")
     rng = np.random.default_rng(0)
     price = pd.Series(40.0 + rng.normal(0, 10, len(idx)), index=idx)
@@ -284,7 +144,6 @@ def merged_like_df(fake_forecasts_root):
     )
     for col in GENERATION_COLUMNS:
         df[col] = 1_000.0
-    df.attrs["forecasts_root"] = fake_forecasts_root
     return df
 
 

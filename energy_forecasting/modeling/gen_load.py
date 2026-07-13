@@ -27,6 +27,7 @@ from sklearn.linear_model import ElasticNet, Ridge
 from energy_forecasting.config import PROCESSED_DATA_DIR, RAW_DATA_DIR
 from energy_forecasting.config.locations import locations_for_tso
 from energy_forecasting.config.modeling import (
+    FEATURE_CONTRACT,
     EXPERIMENTS,
     GEN_LOAD_CV_TEST_DAYS,
     GEN_LOAD_HISTORICAL_FOLDS,
@@ -834,6 +835,7 @@ def _finalize_gen_load_training(
         tags={
             "stage": "model_training",
             "feature_version": feature_version,
+            "feature_contract": FEATURE_CONTRACT,
             "target": target,
             "region": region,
         },
@@ -1093,6 +1095,7 @@ def ensemble_gen_load(
     tags = {
         "stage": "model_training",
         "feature_version": "ensemble",
+        "feature_contract": FEATURE_CONTRACT,
         "target": target,
         "region": region,
     }

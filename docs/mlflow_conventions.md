@@ -43,6 +43,7 @@ Implement `TrackedRun` context manager that validates required tags before closi
 mlflow.set_tags({
     "stage": "feature_selection",       # or "hyperparam_tuning", "production"
     "feature_version": "v5",            # which feature list was used
+    "feature_contract": "forecast_v1",  # data/feature contract epoch
     "holdout_days": "90",
     "cv_folds": "5",
     "cv_mode": "expanding",             # or "sliding"
@@ -50,7 +51,7 @@ mlflow.set_tags({
 })
 ```
 
-Filter in UI: `tags.stage = "production"` to see all production runs, `tags.feature_version = "v5"` for all v5 runs.
+Filter in UI: `tags.stage = "production"` to see all production runs, `tags.feature_version = "v5"` for all v5 runs, and `tags.feature_contract = "forecast_v1"` for the post-forecast-fix epoch.
 
 ---
 

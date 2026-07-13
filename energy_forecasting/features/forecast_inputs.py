@@ -128,7 +128,13 @@ def _normalize_artifact_series(series: pd.Series, target_index: pd.DatetimeIndex
 
 
 def _normalize_local_delivery_grid(series: pd.Series) -> pd.Series:
-    """Normalize a tz-naive local delivery grid to one value per hour label."""
+    """Normalize an already-local tz-naive delivery grid.
+
+    ``normalize_dst`` is used for the production UTC artifact path. This
+    defensive path handles test/manual artifacts that are already stored as
+    local wall-clock labels, where ``normalize_dst`` cannot safely infer an
+    original timezone conversion.
+    """
     if series.index.tz is not None:
         return series
 

@@ -6,6 +6,11 @@ No magic numbers anywhere else in the modeling code.
 Ported from EP's src/config/modeling.py with extensions for gen/load targets.
 """
 
+# ── Feature contract ───────────────────────────────────────
+# Forecast-feature epoch used for MLflow comparability after replacing leaky
+# SMARD prog_* price features with source-neutral forecast_* columns.
+FEATURE_CONTRACT = "forecast_v1"
+
 # ── MAPIE ──────────────────────────────────────────────────────────
 # 90% prediction intervals — standard for energy forecasting.
 # Used by CrossConformalRegressor in intervals.py.

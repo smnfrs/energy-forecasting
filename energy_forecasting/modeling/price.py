@@ -30,6 +30,7 @@ from energy_forecasting.config.features import (
     PRICE_FEATURES_SLIM,
 )
 from energy_forecasting.config.modeling import (
+    FEATURE_CONTRACT,
     HOLDOUT_DAYS,
     SEARCH_CV_FOLDS,
     VALIDATION_CV_FOLDS,
@@ -173,6 +174,7 @@ def _train_winner(
     tags = {
         "stage": "model_training",
         "feature_version": feature_version,
+        "feature_contract": FEATURE_CONTRACT,
         "holdout_days": str(HOLDOUT_DAYS),
         "cv_folds": str(cv_folds),
         "cv_mode": "expanding",
@@ -506,6 +508,7 @@ def run_price_pipeline(
         feature_version="+".join(feature_versions)
         if feature_versions
         else "+".join(sorted(datasets)),
+        feature_contract=FEATURE_CONTRACT,
         holdout_days=str(HOLDOUT_DAYS),
         cv_folds=str(validation_cv_folds),
         cv_mode="expanding",

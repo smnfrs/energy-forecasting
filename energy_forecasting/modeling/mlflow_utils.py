@@ -29,6 +29,7 @@ _AUTO_TAGS = {
 _REQUIRED_TAGS = {
     "stage": {"feature_selection", "model_training", "production"},
     "feature_version": None,  # any non-empty string
+    "feature_contract": None,  # comparability boundary for feature/data contracts
 }
 
 
@@ -46,7 +47,8 @@ class TrackedRun:
     Usage::
 
         with TrackedRun("price/model_training", stage="model_training",
-                        feature_version="shap_top40") as run:
+                        feature_version="shap_top40",
+                        feature_contract="forecast_v1") as run:
             # ... training code ...
             mlflow.log_metrics({"mae": 9.93})
     """

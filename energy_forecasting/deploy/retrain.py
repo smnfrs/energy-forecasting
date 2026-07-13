@@ -26,6 +26,8 @@ from datetime import datetime, timezone
 import pandas as pd
 from loguru import logger
 
+from energy_forecasting.config.modeling import FEATURE_CONTRACT
+
 from energy_forecasting.config import DEPLOY_DATA_DIR, MLFLOW_TRACKING_URI
 
 RETRAIN_HISTORY_PATH = DEPLOY_DATA_DIR / "retrain_history.json"
@@ -82,6 +84,7 @@ def _retrain_one_price_model(entry: dict) -> str | None:
     tags = {
         "stage": "model_training",
         "feature_version": feature_version,
+        "feature_contract": FEATURE_CONTRACT,
         "selection_step": "retrain",
     }
     cv = TimeSeriesSplitter(n_splits=5, mode="expanding")

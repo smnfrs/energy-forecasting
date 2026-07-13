@@ -39,6 +39,7 @@ import pandas as pd
 from loguru import logger
 
 from energy_forecasting.config.modeling import (
+    FEATURE_CONTRACT,
     HOLDOUT_DAYS,
     SEARCH_CV_FOLDS,
 )
@@ -280,6 +281,7 @@ def _log_candidate(
     tags = {
         "stage": "feature_selection",
         "feature_version": name,
+        "feature_contract": FEATURE_CONTRACT,
         "holdout_days": str(HOLDOUT_DAYS),
         "cv_folds": str(SEARCH_CV_FOLDS),
         "cv_mode": "expanding",
@@ -443,6 +445,7 @@ def run_feature_selection(
             dataset_name=dataset_path.stem,
             stage="feature_selection",
             feature_version="meta_shap",
+            feature_contract=FEATURE_CONTRACT,
             candidate_kind="meta",
             holdout_days=str(holdout_days),
             cv_folds=str(cv_folds),

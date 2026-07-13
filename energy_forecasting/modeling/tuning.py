@@ -34,6 +34,7 @@ import pandas as pd
 from loguru import logger
 
 from energy_forecasting.config.modeling import (
+    FEATURE_CONTRACT,
     HOLDOUT_DAYS,
     SEARCH_CV_FOLDS,
 )
@@ -161,6 +162,7 @@ def _log_trial_to_mlflow(
     tags = {
         "stage": "model_training",
         "feature_version": feature_version,
+        "feature_contract": FEATURE_CONTRACT,
         "holdout_days": str(HOLDOUT_DAYS),
         "cv_folds": str(SEARCH_CV_FOLDS),
         "cv_mode": "expanding",
