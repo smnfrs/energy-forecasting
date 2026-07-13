@@ -974,6 +974,21 @@ def write_outputs(
     logger.info("All outputs written to deploy/data/")
 
 
+def write_gen_load_only_outputs(
+    gen_load_results: dict,
+    issued_at: str | None = None,
+) -> None:
+    """Write gen/load outputs while intentionally leaving price files untouched."""
+    issued_at = issued_at or _now_utc()
+    write_gen_load_forecasts(gen_load_results, issued_at=issued_at)
+    write_actuals()
+    write_gen_load_actuals()
+    write_gen_load_errors()
+    write_gen_load_hindcast()
+    write_errors_summary()
+    logger.info("Gen/load-only outputs written to deploy/data/; price outputs left untouched")
+
+
 def backfill_errors() -> None:
     """Compute MAE/RMSE for every forecast in history where actuals are available.
 

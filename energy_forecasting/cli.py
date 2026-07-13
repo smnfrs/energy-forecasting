@@ -1070,12 +1070,18 @@ def forecast_cmd(
     skip_update: bool = typer.Option(
         False, "--skip-update", help="Skip data update (use existing data)"
     ),
+    run_price: bool = typer.Option(
+        True, "--price/--no-price", help="Run price inference and price-dependent outputs"
+    ),
 ):
-    """Run the full daily inference pipeline: update → gen/load → price → validate → write."""
+    """Run the daily inference pipeline: update → gen/load → optional price → write."""
     from energy_forecasting.deploy.inference import run_inference
 
-    result = run_inference(skip_update=skip_update)
+    result = run_inference(skip_update=skip_update, run_price=run_price)
     price_df = result["price"]
+    if price_df is None:
+        logger.info("Forecast complete. Price skipped; gen/load outputs refreshed.")
+        return
     logger.info(
         f"Forecast complete. Price: {len(price_df)} hours, "
         f"mean={price_df['y_pred'].mean():.1f} EUR/MWh"

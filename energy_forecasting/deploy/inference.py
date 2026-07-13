@@ -6,6 +6,7 @@ validation → output writing.
 Usage (CLI):
     energy-forecasting deploy forecast
     energy-forecasting deploy forecast --skip-update
+    energy-forecasting deploy forecast --skip-update --no-price
 
 Usage (Python):
     from energy_forecasting.deploy.inference import run_inference
@@ -80,7 +81,7 @@ def _merge_and_process() -> None:
     logger.info("Merged dataset rebuilt")
 
 
-def run_inference(skip_update: bool = False) -> dict:
+def run_inference(skip_update: bool = False, run_price: bool = True) -> dict:
     """Run the full daily inference pipeline.
 
     Parameters
@@ -88,11 +89,14 @@ def run_inference(skip_update: bool = False) -> dict:
     skip_update : bool
         If True, skip data update and merge steps (use when data was already
         updated in a previous step, e.g. in GitHub Actions collect-data job).
+    run_price : bool
+        If False, skip price inference and price-dependent outputs. Gen/load
+        outputs and monitoring artifacts are still written.
 
     Returns
     -------
     dict with keys:
-        price     : 24-row DataFrame [y_pred, y_lower, y_upper]
+        price     : 24-row DataFrame [y_pred, y_lower, y_upper], or None
         gen_load  : dict[(target, region) → 168-row DataFrame]
     """
     errors: dict[str, Exception] = {}
@@ -122,6 +126,28 @@ def run_inference(skip_update: bool = False) -> dict:
     update_historical_forecasts(gen_load_results)
 
     # 3. Price inference (uses the just-updated historical_forecasts)
+    price_df = None
+    if not run_price:
+        logger.warning(
+            "Skipping price inference by request; existing price forecast/history files "
+            "will be left untouched."
+        )
+        from energy_forecasting.deploy.publish import write_gen_load_only_outputs
+
+        try:
+            write_gen_load_only_outputs(gen_load_results)
+        except Exception as exc:
+            logger.exception("Gen/load output writing failed")
+            errors["publish"] = exc
+
+        if errors:
+            logger.warning(
+                f"Pipeline complete with {len(errors)} non-fatal error(s): {list(errors.keys())}"
+            )
+        else:
+            logger.info("Gen/load-only inference pipeline complete")
+        return {"price": None, "gen_load": gen_load_results}
+
     from energy_forecasting.deploy.price_inference import run_price_inference
 
     logger.info("Running price inference...")
