@@ -106,27 +106,27 @@ def test_neg_price_stats_expand_before_full_window():
     assert stats["_derived_neg_price_depth_30d"].tolist() == [5.0, 2.5, 20 / 3, 5.0]
 
 
-# ── compute_generation_pct (per-technology prognosis) ──────────────
+# ── compute_generation_pct (per-technology forecast) ────────────────
 
 
-def test_pct_prog_per_technology_emits_three_columns():
+def test_pct_forecast_per_technology_emits_three_columns():
     idx = pd.date_range("2024-01-01", periods=24, freq="h", tz="UTC")
     df = pd.DataFrame(
         {
-            "prognostizierte_erzeugung_gesamt": 60_000.0,
-            "prognostizierte_erzeugung_photovoltaik": 12_000.0,
-            "prognostizierte_erzeugung_onshore": 18_000.0,
-            "prognostizierte_erzeugung_offshore": 6_000.0,
+            "forecast_gen_total": 60_000.0,
+            "forecast_gen_solar": 12_000.0,
+            "forecast_gen_wind_on": 18_000.0,
+            "forecast_gen_wind_off": 6_000.0,
         },
         index=idx,
     )
     # Need generation columns to satisfy `compute_generation_pct`'s totals.
     for col in GENERATION_COLUMNS:
         df[col] = 1.0
-    out = compute_generation_pct(df, add_prognosticated_pct=True)
-    assert out["_derived_pct_prog_solar"].iloc[0] == pytest.approx(12_000 / 60_000)
-    assert out["_derived_pct_prog_wind_on"].iloc[0] == pytest.approx(18_000 / 60_000)
-    assert out["_derived_pct_prog_wind_off"].iloc[0] == pytest.approx(6_000 / 60_000)
+    out = compute_generation_pct(df, add_forecast_pct=True)
+    assert out["_derived_pct_forecast_solar"].iloc[0] == pytest.approx(12_000 / 60_000)
+    assert out["_derived_pct_forecast_wind_on"].iloc[0] == pytest.approx(18_000 / 60_000)
+    assert out["_derived_pct_forecast_wind_off"].iloc[0] == pytest.approx(6_000 / 60_000)
 
 
 # ── load_gen_load_forecasts ─────────────────────────────────────────
@@ -275,10 +275,10 @@ def merged_like_df(fake_forecasts_root):
     df = pd.DataFrame(
         {
             "target_price": price,
-            "prognostizierte_erzeugung_gesamt": 60_000.0,
-            "prognostizierte_erzeugung_photovoltaik": 8_000.0,
-            "prognostizierte_erzeugung_onshore": 18_000.0,
-            "prognostizierte_erzeugung_offshore": 6_000.0,
+            "forecast_gen_total": 60_000.0,
+            "forecast_gen_solar": 8_000.0,
+            "forecast_gen_wind_on": 18_000.0,
+            "forecast_gen_wind_off": 6_000.0,
         },
         index=idx,
     )
@@ -288,17 +288,16 @@ def merged_like_df(fake_forecasts_root):
     return df
 
 
-def test_engine_wires_eeg_neg_price_and_pct_prog(merged_like_df):
-    # The EMA-historical forecast overlay no longer flows through the
-    # feature engine — it's applied at price-dataset prep onto prog_*
-    # columns. This test now covers eeg_regime, neg_price_*, pct_prog_*.
+def test_engine_wires_eeg_neg_price_and_pct_forecast(merged_like_df):
+    # Forecast artifacts are resolved before feature engineering. This test
+    # covers eeg_regime, neg_price_*, and pct_forecast_*.
     feats = [
         "eeg_regime",
         "neg_price_frac_30d_d1",
         "neg_price_depth_30d_d1",
-        "pct_prog_solar",
-        "pct_prog_wind_on",
-        "pct_prog_wind_off",
+        "pct_forecast_solar",
+        "pct_forecast_wind_on",
+        "pct_forecast_wind_off",
     ]
     result = engineer_features(merged_like_df, feats)
     assert list(result.columns) == feats
@@ -306,7 +305,7 @@ def test_engine_wires_eeg_neg_price_and_pct_prog(merged_like_df):
     # _d1 lag pushes the first 24 hours of rolling-stat outputs to NaN
     assert result["neg_price_frac_30d_d1"].iloc[:24].isna().all()
     assert result["neg_price_frac_30d_d1"].iloc[24:].notna().all()
-    assert result["pct_prog_solar"].iloc[0] == pytest.approx(8_000 / 60_000)
+    assert result["pct_forecast_solar"].iloc[0] == pytest.approx(8_000 / 60_000)
 
 
 # ── Availability rules / validation ────────────────────────────────
@@ -318,9 +317,9 @@ def test_validation_accepts_new_5c_features():
         "neg_price_frac_30d_d1",
         "neg_price_frac_90d_d1",
         "neg_price_depth_30d_d1",
-        "pct_prog_solar",
-        "pct_prog_wind_on",
-        "pct_prog_wind_off",
+        "pct_forecast_solar",
+        "pct_forecast_wind_on",
+        "pct_forecast_wind_off",
     ]
     errors = validate_features(feats)
     assert errors == []

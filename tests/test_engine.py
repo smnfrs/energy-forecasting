@@ -17,8 +17,8 @@ def sample_df():
             "marktpreis_frankreich": rng.normal(45, 18, len(idx)),
             "stromerzeugung_wind_onshore": rng.uniform(1000, 20000, len(idx)),
             "stromerzeugung_photovoltaik": rng.uniform(0, 15000, len(idx)),
-            "prognostizierte_erzeugung_gesamt": rng.uniform(30000, 70000, len(idx)),
-            "prognostizierte_erzeugung_wind_und_photovoltaik": rng.uniform(5000, 30000, len(idx)),
+            "forecast_gen_total": rng.uniform(30000, 70000, len(idx)),
+            "forecast_gen_wind_pv": rng.uniform(5000, 30000, len(idx)),
         },
         index=idx,
     )
@@ -63,8 +63,8 @@ def test_fourier_features(sample_df):
 
 
 def test_daily_aggregate(sample_df):
-    result = engineer_features(sample_df, ["prog_gen_total_daily_sum"], validate=True)
-    assert "prog_gen_total_daily_sum" in result.columns
+    result = engineer_features(sample_df, ["forecast_gen_total_daily_sum"], validate=True)
+    assert "forecast_gen_total_daily_sum" in result.columns
 
 
 def test_interaction(sample_df):

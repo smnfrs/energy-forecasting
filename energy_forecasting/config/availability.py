@@ -25,8 +25,13 @@ class AvailabilityRule:
 
 
 AVAILABILITY_RULES: list[AvailabilityRule] = [
-    # Forecasts — published for today, available before the auction
-    AvailabilityRule("prog_*", 0, None, "TSO forecasts published for delivery day"),
+    # Source-neutral own forecast inputs built before the price run.
+    AvailabilityRule(
+        "forecast_*",
+        0,
+        None,
+        "Own gen/load forecast artifacts are produced before the 08:00 UTC price run.",
+    ),
     AvailabilityRule("hour_*", 0, None, "Deterministic temporal features"),
     AvailabilityRule("dow_*", 0, None, "Deterministic temporal features"),
     AvailabilityRule("is_holiday", 0, None, "Deterministic"),
@@ -37,7 +42,12 @@ AVAILABILITY_RULES: list[AvailabilityRule] = [
     AvailabilityRule("hour", 0, None, "Deterministic (Fourier base)"),
     AvailabilityRule("hour_of_day", 0, None, "Deterministic"),
     AvailabilityRule("day_of_week", 0, None, "Deterministic"),
-    AvailabilityRule("pct_prog_*", 0, None, "Derived from forecasts, same availability"),
+    AvailabilityRule(
+        "pct_forecast_*",
+        0,
+        None,
+        "Derived from source-neutral forecast_* columns, same availability.",
+    ),
     AvailabilityRule(
         "eeg_regime",
         0,

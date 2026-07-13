@@ -1,7 +1,7 @@
 """Tests for features/validation.py — leakage validation."""
 
 import pytest
-from energy_forecasting.features.validation import validate_features
+from energy_forecasting.features.validation import validate_features, validate_price_feature_list
 
 # ── Valid features (should produce 0 errors) ──────────────────────
 
@@ -26,9 +26,9 @@ class TestValidFeatures:
     @pytest.mark.parametrize(
         "feature",
         [
-            "prog_gen_total_daily_sum",
-            "prog_gen_wind_pv_daily_max",
-            "prog_load_daily_sum",
+            "forecast_gen_total_daily_sum",
+            "forecast_gen_wind_pv_daily_max",
+            "forecast_load_daily_sum",
         ],
     )
     def test_forecasts_daily_agg_valid(self, feature):
@@ -207,3 +207,25 @@ class TestEdgeCases:
 
         errors = validate_features(PRICE_FEATURES_FULL)
         assert errors == [], f"Errors: {[e.reason for e in errors]}"
+
+
+def test_validate_price_feature_list_rejects_raw_forecast_tokens():
+    with pytest.raises(ValueError, match="source-neutral forecast"):
+        validate_price_feature_list(["prog_residual__x__day_index"])
+
+
+def test_availability_rejects_prog_feature():
+    errors = validate_features(["prog_residual"])
+    assert errors
+    assert "No availability rule" in errors[0].reason
+
+
+def test_price_feature_lists_contain_no_raw_forecast_tokens():
+    from energy_forecasting.config.features import (
+        PRICE_FEATURES_FULL,
+        PRICE_FEATURES_MAX,
+        PRICE_FEATURES_SLIM,
+    )
+
+    for feature_list in (PRICE_FEATURES_SLIM, PRICE_FEATURES_FULL, PRICE_FEATURES_MAX):
+        validate_price_feature_list(feature_list)

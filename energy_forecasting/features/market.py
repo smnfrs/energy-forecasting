@@ -89,7 +89,7 @@ def compute_generation_pct(
     sources: list[str] | None = None,
     add_renewable_pct: bool = False,
     add_supply_demand_gap: bool = False,
-    add_prognosticated_pct: bool = False,
+    add_forecast_pct: bool = False,
 ) -> pd.DataFrame:
     """pct_{source} = source / total_generation."""
     if sources is None:
@@ -112,25 +112,20 @@ def compute_generation_pct(
         if load_col in df.columns:
             result["_derived_supply_demand_gap"] = total - df[load_col]
 
-    if add_prognosticated_pct:
-        prog_total = "prognostizierte_erzeugung_gesamt"
-        prog_other = "prognostizierte_erzeugung_sonstige"
-        prog_wind_pv = "prognostizierte_erzeugung_wind_und_photovoltaik"
-        prog_wind_on = "prognostizierte_erzeugung_onshore"
-        prog_wind_off = "prognostizierte_erzeugung_offshore"
-        prog_solar = "prognostizierte_erzeugung_photovoltaik"
-        if prog_total in df.columns:
-            pt = df[prog_total]
-            if prog_other in df.columns:
-                result["_derived_pct_prog_other"] = df[prog_other] / pt
-            if prog_wind_pv in df.columns:
-                result["_derived_pct_prog_wind_pv"] = df[prog_wind_pv] / pt
-            if prog_wind_on in df.columns:
-                result["_derived_pct_prog_wind_on"] = df[prog_wind_on] / pt
-            if prog_wind_off in df.columns:
-                result["_derived_pct_prog_wind_off"] = df[prog_wind_off] / pt
-            if prog_solar in df.columns:
-                result["_derived_pct_prog_solar"] = df[prog_solar] / pt
+    if add_forecast_pct:
+        forecast_total = "forecast_gen_total"
+        forecast_cols = {
+            "_derived_pct_forecast_other": "forecast_gen_other",
+            "_derived_pct_forecast_wind_pv": "forecast_gen_wind_pv",
+            "_derived_pct_forecast_wind_on": "forecast_gen_wind_on",
+            "_derived_pct_forecast_wind_off": "forecast_gen_wind_off",
+            "_derived_pct_forecast_solar": "forecast_gen_solar",
+        }
+        if forecast_total in df.columns:
+            total_forecast = df[forecast_total]
+            for out_col, input_col in forecast_cols.items():
+                if input_col in df.columns:
+                    result[out_col] = df[input_col] / total_forecast
 
     return result
 

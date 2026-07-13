@@ -487,8 +487,8 @@ def update_historical_forecasts(
 ) -> None:
     """Append today's live forecasts to the historical_forecasts parquets.
 
-    These files are used by the price model's EMA overlay
-    (_overlay_ema_forecasts) to supply the prog_* features for D+1.
+    These files are consumed by build_forecast_columns to supply the
+    source-neutral forecast_* price features for D+1.
     """
     HISTORICAL_FORECASTS_DIR.mkdir(parents=True, exist_ok=True)
     for (target, region), df in results.items():

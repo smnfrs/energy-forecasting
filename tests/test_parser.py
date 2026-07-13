@@ -172,12 +172,12 @@ def test_fourier_weekly():
 
 
 def test_daily_agg():
-    spec = parse_feature("prog_gen_total_daily_sum")
+    spec = parse_feature("forecast_gen_total_daily_sum")
     assert spec.daily_agg == DailyAggregate(stat="sum")
 
 
 def test_daily_agg_max():
-    spec = parse_feature("prog_gen_solar_daily_max")
+    spec = parse_feature("forecast_gen_solar_daily_max")
     assert spec.daily_agg == DailyAggregate(stat="max")
 
 
@@ -237,7 +237,7 @@ def test_hour_sin_vs_hour():
     assert spec2.base == "hour"
 
 
-def test_prog_gen_total_resolution():
-    spec = parse_feature("prog_gen_total_daily_sum")
-    assert spec.base == "prog_gen_total"
-    assert spec.raw_col == "prognostizierte_erzeugung_gesamt"
+def test_forecast_gen_total_resolution():
+    spec = parse_feature("forecast_gen_total_daily_sum")
+    assert spec.base == "forecast_gen_total"
+    assert spec.raw_col == "forecast_gen_total"

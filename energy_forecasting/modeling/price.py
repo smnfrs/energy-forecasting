@@ -35,6 +35,8 @@ from energy_forecasting.config.modeling import (
     VALIDATION_CV_FOLDS,
 )
 from energy_forecasting.data.io import load_parquet
+from energy_forecasting.features.forecast_inputs import build_forecast_columns
+from energy_forecasting.features.validation import validate_price_feature_list
 from energy_forecasting.modeling.cv import TimeSeriesSplitter
 from energy_forecasting.modeling.datasets import find_dataset, prepare_dataset
 from energy_forecasting.modeling.ensemble import (
@@ -66,87 +68,6 @@ FEATURE_LISTS: dict[str, list[str]] = {
 # ── Dataset prep ─────────────────────────────────────────────────
 
 
-def _overlay_ema_forecasts(df: pd.DataFrame) -> pd.DataFrame:
-    """Overlay EMA historical_forecasts onto SMARD ``prognostizierte_*``
-    columns, in place.
-
-    The merged dataset's ``prognostizierte_*`` columns already implement
-    two tiers of a waterfall (SMARD operator forecasts where SMARD has
-    them, actuals as backfill before 2018 — see ``config/cleaning.py``).
-    This adds the top tier: where EMA leak-free historical_forecasts exist
-    (typically 2022-01-15+), prefer them over the SMARD value.
-
-    Effective waterfall on the four base forecasts::
-
-        EMA historical_forecasts  →  SMARD operator forecasts  →  actuals
-
-    The aggregate ``prognostizierte_erzeugung_wind_und_photovoltaik`` is
-    recomputed from the upgraded components so derived ``prog_gen_wind_pv``
-    stays internally consistent. ``prog_gen_total`` and ``prog_gen_other``
-    have no EMA equivalent in the historical_forecasts artifacts and stay
-    at SMARD-then-actuals.
-
-    Runs on raw merged data BEFORE ``prepare_dataset`` applies the
-    SHORT_NAMES alias step, so the German raw column names are still
-    present here.
-
-    Missing historical_forecasts files (e.g. before Stage 5b has run) are
-    not fatal — the function logs a warning and returns ``df`` unchanged.
-    """
-    from energy_forecasting.modeling.gen_load_forecasts import (
-        load_gen_load_forecasts,
-    )
-
-    # Raw SMARD column → EMA historical_forecast column.
-    base_mapping = {
-        "prognostizierte_erzeugung_onshore": "_derived_forecast_wind_on",
-        "prognostizierte_erzeugung_offshore": "_derived_forecast_wind_off",
-        "prognostizierte_erzeugung_photovoltaik": "_derived_forecast_solar",
-        "prognostizierter_verbrauch_gesamt": "_derived_forecast_load",
-    }
-    targets = [c for c in base_mapping if c in df.columns]
-    if not targets:
-        logger.warning(
-            "EMA overlay skipped: none of the expected raw SMARD forecast "
-            f"columns found in merged data. Looked for: {list(base_mapping)}"
-        )
-        return df
-
-    try:
-        ema = load_gen_load_forecasts(
-            df.index,
-            columns=[base_mapping[c] for c in targets],
-        )
-    except FileNotFoundError as exc:
-        logger.warning(
-            f"Skipping EMA overlay — historical_forecasts not found: {exc}. "
-            f"prog_* features will use SMARD + actuals only."
-        )
-        return df
-
-    overlay_counts: dict[str, int] = {}
-    for raw_col in targets:
-        ema_col = base_mapping[raw_col]
-        mask = ema[ema_col].notna()
-        if mask.any():
-            df.loc[mask, raw_col] = ema.loc[mask, ema_col].astype(df[raw_col].dtype).to_numpy()
-        overlay_counts[raw_col] = int(mask.sum())
-
-    # Keep the wind+pv aggregate consistent with its upgraded components.
-    wind_pv_inputs = (
-        "prognostizierte_erzeugung_onshore",
-        "prognostizierte_erzeugung_offshore",
-        "prognostizierte_erzeugung_photovoltaik",
-    )
-    wind_pv_agg = "prognostizierte_erzeugung_wind_und_photovoltaik"
-    if wind_pv_agg in df.columns and all(c in df.columns for c in wind_pv_inputs):
-        df[wind_pv_agg] = sum(df[c] for c in wind_pv_inputs)
-
-    logger.info(
-        "EMA-forecast overlay applied: " + ", ".join(f"{c}={n}" for c, n in overlay_counts.items())
-    )
-    return df
-
 
 def prepare_price_dataset(
     feature_version: str,
@@ -173,12 +94,14 @@ def prepare_price_dataset(
         return existing
 
     merged_path = merged_path or Path("data/processed/merged.parquet")
+    feature_list = FEATURE_LISTS[feature_version]
+    validate_price_feature_list(feature_list)
     df = load_parquet(merged_path)
     logger.info(f"Loaded merged data: {df.shape} from {merged_path}")
-    df = _overlay_ema_forecasts(df)
+    df = build_forecast_columns(df)
     path = prepare_dataset(
         df,
-        FEATURE_LISTS[feature_version],
+        feature_list,
         target_col=PRICE_TARGET,
         name=dataset_name,
     )

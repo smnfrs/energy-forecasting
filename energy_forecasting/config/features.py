@@ -150,6 +150,9 @@ FLOW_PAIRS: list[tuple[str, str, str]] = [
 
 # ── Feature lists ─────────────────────────────────────────────────
 # Short-name feature strings using the suffix DSL grammar.
+# Price feature lists must use source-neutral forecast_* names only; raw
+# SMARD prog_* aliases are retained for audit/fallback parsing but are not
+# valid production price features.
 # Matches EP's preprocessor_v5_slim_hourly (morning_cutoff_cet=10).
 
 # Exact match of EP's preprocessor_v5_slim_hourly output (83 features).
@@ -163,20 +166,20 @@ PRICE_FEATURES_SLIM: list[str] = [
     "dow_sin",
     "dow_cos",
     "is_holiday",
-    # ── Forecasts — raw hourly, day-ahead available (8) ──
-    "prog_gen_total",
-    "prog_gen_wind_pv",
-    "prog_gen_wind_on",
-    "prog_gen_wind_off",
-    "prog_gen_solar",
-    "prog_gen_other",
-    "prog_load",
-    "prog_residual",
+    # ── Forecasts — source-neutral, inference-available (8) ──
+    "forecast_gen_total",
+    "forecast_gen_wind_pv",
+    "forecast_gen_wind_on",
+    "forecast_gen_wind_off",
+    "forecast_gen_solar",
+    "forecast_gen_other",
+    "forecast_load",
+    "forecast_residual_load",
     # ── Forecast daily aggregate (1, EP keeps only this one) ──
-    "prog_gen_wind_pv_daily_max",
-    # ── Prognosticated percentages (2) ──
-    "pct_prog_other",
-    "pct_prog_wind_pv",
+    "forecast_gen_wind_pv_daily_max",
+    # ── Forecast percentages (2) ──
+    "pct_forecast_other",
+    "pct_forecast_wind_pv",
     # ── Target price rolling stats (9) ──
     "price_d7",  # D-7 single day avg
     "price_d7_d1_avg",  # 7-day rolling avg
@@ -254,11 +257,11 @@ PRICE_FEATURES_SLIM: list[str] = [
     "day_index",
     "year_index",
     # ── Interaction terms (5) ──
-    "prog_residual__x__day_index",
+    "forecast_residual_load__x__day_index",
     "price_ewma_6_d1__x__day_index",
     "ttf_ewma_720_d2__x__day_index",
     "ttf_ewma_24_d2__x__day_index",
-    "prog_gen_other__x__day_index",
+    "forecast_gen_other__x__day_index",
 ]
 
 PRICE_FEATURES_FULL: list[str] = [
@@ -451,19 +454,19 @@ PRICE_FEATURES_MAX: list[str] = [
     "load_ewma_168_d1_h7",
     "gen_gas_ewma_24_d2",
     # ── Forecast daily aggregate variants (offset=0, no lag) ────────
-    "prog_gen_total_daily_max",
-    "prog_gen_total_daily_avg",
-    "prog_load_daily_max",
-    "prog_load_daily_avg",
-    "prog_residual_daily_max",
-    "prog_residual_daily_avg",
-    "prog_gen_solar_daily_max",
-    "prog_gen_solar_daily_sum",
-    "prog_gen_wind_on_daily_max",
-    # ── Per-technology prognosis percentages (new in 5c.0) ──────────
-    "pct_prog_solar",
-    "pct_prog_wind_on",
-    "pct_prog_wind_off",
+    "forecast_gen_total_daily_max",
+    "forecast_gen_total_daily_avg",
+    "forecast_load_daily_max",
+    "forecast_load_daily_avg",
+    "forecast_residual_load_daily_max",
+    "forecast_residual_load_daily_avg",
+    "forecast_gen_solar_daily_max",
+    "forecast_gen_solar_daily_sum",
+    "forecast_gen_wind_on_daily_max",
+    # ── Per-technology forecast percentages (new in 5c.0) ──────────
+    "pct_forecast_solar",
+    "pct_forecast_wind_on",
+    "pct_forecast_wind_off",
     # ── Price volatility / momentum ratios ──────────────────────────
     "price_d2_d1_std__x__price_d7_d1_std",
     "price_d7_d1_avg__x__price_d30_d1_avg",
@@ -472,19 +475,17 @@ PRICE_FEATURES_MAX: list[str] = [
     "neg_price_frac_30d_d1",
     "neg_price_frac_90d_d1",
     "neg_price_depth_30d_d1",
-    # Stage 5b gen/load historical_forecasts: no longer separate features.
-    # They overlay onto prog_gen_wind_on / prog_gen_wind_off / prog_gen_solar /
-    # prog_load at dataset prep (waterfall EMA → SMARD → actuals), so the
-    # existing prog_* columns and their derivatives carry the upgraded values.
+    # Stage 5b gen/load forecast artifacts feed source-neutral forecast_*
+    # columns at dataset prep via build_forecast_columns.
     # ── Additional interaction terms ────────────────────────────────
     "price_ewma_24_d1__x__hour_sin",
-    "prog_residual__x__is_weekend",
-    "prog_gen_solar__x__hour_sin",
-    "prog_gen_wind_pv__x__prog_load",
+    "forecast_residual_load__x__is_weekend",
+    "forecast_gen_solar__x__hour_sin",
+    "forecast_gen_wind_pv__x__forecast_load",
     "price_d7_d1_avg__x__day_index",
     "carbon_ewma_24_d2__x__gen_pct_gas_d2",
     "ttf_ewma_24_d2__x__gen_pct_gas_d2",
-    "prog_residual__x__is_holiday",
+    "forecast_residual_load__x__is_holiday",
     "price_d2_d1_std__x__day_index",
     "load_d1_eh7__x__day_index",
 ]

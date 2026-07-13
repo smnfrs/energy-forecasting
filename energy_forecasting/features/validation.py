@@ -24,6 +24,23 @@ class ValidationError:
     reason: str
 
 
+PRICE_FEATURE_BANNED_TOKENS = ("prog_", "pct_prog_", "prognostiziert")
+
+
+def validate_price_feature_list(feature_strings: list[str]) -> None:
+    """Raise if a price feature schema uses raw SMARD forecast names."""
+    bad = [
+        feature
+        for feature in feature_strings
+        if any(token in feature for token in PRICE_FEATURE_BANNED_TOKENS)
+    ]
+    if bad:
+        raise ValueError(
+            "Price features must use source-neutral forecast_* names; "
+            f"found forbidden raw forecast token(s) in: {bad[:10]}"
+        )
+
+
 def _match_rule(short_name: str) -> AvailabilityRule | None:
     """Find the availability rule that matches a short name."""
     for rule in AVAILABILITY_RULES:

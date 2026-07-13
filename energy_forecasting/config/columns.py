@@ -29,7 +29,8 @@ SHORT_NAMES: dict[str, str] = {
     "gen_pumped": "stromerzeugung_pumpspeicher",
     "gen_other": "stromerzeugung_sonstige_konventionelle",
     "gen_other_renew": "stromerzeugung_sonstige_erneuerbare",
-    # Forecasts (published for today — no lag required)
+    # Raw SMARD forecast columns. Keep for audit and historical fallback only;
+    # price feature lists must use the source-neutral forecast_* names below.
     "prog_load": "prognostizierter_verbrauch_gesamt",
     "prog_gen_total": "prognostizierte_erzeugung_gesamt",
     "prog_gen_wind_pv": "prognostizierte_erzeugung_wind_und_photovoltaik",
@@ -38,6 +39,15 @@ SHORT_NAMES: dict[str, str] = {
     "prog_gen_solar": "prognostizierte_erzeugung_photovoltaik",
     "prog_gen_other": "prognostizierte_erzeugung_sonstige",
     "prog_residual": "prognostizierter_verbrauch_residuallast",
+    # Source-neutral forecast features built by features.forecast_inputs.
+    "forecast_load": "forecast_load",
+    "forecast_gen_total": "forecast_gen_total",
+    "forecast_gen_wind_pv": "forecast_gen_wind_pv",
+    "forecast_gen_wind_on": "forecast_gen_wind_on",
+    "forecast_gen_wind_off": "forecast_gen_wind_off",
+    "forecast_gen_solar": "forecast_gen_solar",
+    "forecast_gen_other": "forecast_gen_other",
+    "forecast_residual_load": "forecast_residual_load",
     # Consumption
     "load": "stromverbrauch_gesamt_(netzlast)",
     "residual_load": "stromverbrauch_residuallast",
@@ -122,20 +132,17 @@ SHORT_NAMES: dict[str, str] = {
     "total_generation": "_derived_total_generation",
     "pct_renewable": "_derived_pct_renewable",
     "supply_demand_gap": "_derived_supply_demand_gap",
-    "pct_prog_other": "_derived_pct_prog_other",
-    "pct_prog_wind_pv": "_derived_pct_prog_wind_pv",
-    "pct_prog_solar": "_derived_pct_prog_solar",
-    "pct_prog_wind_on": "_derived_pct_prog_wind_on",
-    "pct_prog_wind_off": "_derived_pct_prog_wind_off",
+    "pct_forecast_other": "_derived_pct_forecast_other",
+    "pct_forecast_wind_pv": "_derived_pct_forecast_wind_pv",
+    "pct_forecast_solar": "_derived_pct_forecast_solar",
+    "pct_forecast_wind_on": "_derived_pct_forecast_wind_on",
+    "pct_forecast_wind_off": "_derived_pct_forecast_wind_off",
     # EEG regime indicator (deterministic, date-driven)
     "eeg_regime": "_derived_eeg_regime",
     # Negative-price rolling stats (computed on target price, lag via _d1)
     "neg_price_frac_30d": "_derived_neg_price_frac_30d",
     "neg_price_frac_90d": "_derived_neg_price_frac_90d",
     "neg_price_depth_30d": "_derived_neg_price_depth_30d",
-    # EMA gen/load historical_forecasts are no longer exposed as separate
-    # features — they overlay onto prog_* columns at dataset prep (waterfall
-    # EMA → SMARD → actuals). See energy_forecasting.modeling.price._overlay_ema_forecasts.
     # Weather-derived (computed by weather FE classes, stage 4)
     "wpd_offshore_cap": "_derived_wpd_offshore_cap_weighted",
     "wpd_onshore_cap": "_derived_wpd_onshore_cap_weighted",

@@ -35,7 +35,7 @@ def test_all_rules_have_reason():
 def test_patterns_cover_key_categories():
     patterns = {r.pattern for r in AVAILABILITY_RULES}
     # Forecasts
-    assert "prog_*" in patterns
+    assert "forecast_*" in patterns
     # Prices
     assert "price" in patterns
     assert "price_*" in patterns

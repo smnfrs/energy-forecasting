@@ -35,8 +35,8 @@ _CATEGORY_RULES: list[tuple[str, tuple[str, ...]]] = [
         ),
     ),
     ("wind", ("wind",)),
-    ("solar", ("solar", "gen_pv", "prog_gen_solar", "pct_prog_solar")),
-    ("residual_gen", ("residual", "supply_demand_gap", "gen_other", "prog_gen_other")),
+    ("solar", ("solar", "gen_pv", "forecast_gen_solar", "pct_forecast_solar")),
+    ("residual_gen", ("residual", "supply_demand_gap", "gen_other", "forecast_gen_other")),
     (
         "conventional_gen",
         (

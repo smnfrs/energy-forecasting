@@ -77,14 +77,14 @@ def _prepare_working_df(df: pd.DataFrame, specs: list[FeatureSpec]) -> pd.DataFr
         "_derived_total_generation",
         "_derived_pct_renewable",
         "_derived_supply_demand_gap",
-        "_derived_pct_prog_",
+        "_derived_pct_forecast_",
     )
     if any(d.startswith(gen_pct_prefixes) for d in needed_derived):
         gen_pct = compute_generation_pct(
             df,
             add_renewable_pct="_derived_pct_renewable" in needed_derived,
             add_supply_demand_gap="_derived_supply_demand_gap" in needed_derived,
-            add_prognosticated_pct=any(d.startswith("_derived_pct_prog_") for d in needed_derived),
+            add_forecast_pct=any(d.startswith("_derived_pct_forecast_") for d in needed_derived),
         )
         for col in gen_pct.columns:
             if col in needed_derived:

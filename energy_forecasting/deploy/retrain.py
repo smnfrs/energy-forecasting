@@ -57,24 +57,6 @@ def _append_retrain_history(entry: dict) -> None:
     logger.info(f"Retrain history updated ({len(history)} events)")
 
 
-def _apply_ema_overlay_for_retrain() -> None:
-    """Re-apply EMA overlay to merged dataset before retraining.
-
-    Uses only historical_forecasts already on disk (no live inference).
-    """
-    from energy_forecasting.config import PROCESSED_DATA_DIR
-    from energy_forecasting.modeling.price import _overlay_ema_forecasts
-
-    merged_path = PROCESSED_DATA_DIR / "merged.parquet"
-    if not merged_path.exists():
-        logger.warning(f"merged.parquet not found at {merged_path}, skipping EMA overlay")
-        return
-
-    df = pd.read_parquet(merged_path)
-    df = _overlay_ema_forecasts(df)
-    df.to_parquet(merged_path)
-    logger.info(f"EMA overlay applied for retrain ({len(df)} rows)")
-
 
 def _retrain_one_price_model(entry: dict) -> str | None:
     """Retrain one price base model using stored hyperparams. Returns new run_id."""
@@ -126,11 +108,10 @@ def run_price_retrain(
     """Retrain all production price models and recompute ensemble weights.
 
     Steps:
-    1. Apply EMA overlay to merged dataset
-    2. Retrain each non-zero-weight base model using stored hyperparams
-    3. Recompute SLSQP ensemble weights from fresh OOF predictions
-    4. Degradation check
-    5. If OK: update ensemble_config.json + export models
+    1. Retrain each non-zero-weight base model using stored hyperparams
+    2. Recompute SLSQP ensemble weights from fresh OOF predictions
+    3. Degradation check
+    4. If OK: update ensemble_config.json + export models
 
     Returns dict with:
         new_mae, old_mae, needs_reselection, config_path
@@ -139,10 +120,8 @@ def run_price_retrain(
     old_mae = old_config.get("metrics", {}).get("mae", float("inf"))
     prod_names = set(production_model_names(old_config))
 
-    # 1. EMA overlay
-    _apply_ema_overlay_for_retrain()
-
-    # 2. Retrain each production model
+    # 1. Retrain each production model. Datasets must already have been rebuilt
+    # with source-neutral forecast_* features by prepare_price_dataset.
     new_run_ids: dict[str, str] = {}
     for entry in old_config["models"]:
         if entry["name"] not in prod_names:
@@ -157,10 +136,10 @@ def run_price_retrain(
     if not new_run_ids:
         raise RuntimeError("All price model retrains failed")
 
-    # 3. Recompute ensemble weights
+    # 2. Recompute ensemble weights
     new_config, new_mae = _recompute_ensemble(old_config, new_run_ids, holdout_days)
 
-    # 4. Degradation check
+    # 3. Degradation check
     if old_mae > 0:
         ratio = new_mae / old_mae
         needs_reselection = ratio > (1.0 + BLEND_DEGRADATION_THRESHOLD)
@@ -190,7 +169,7 @@ def run_price_retrain(
             "config_path": None,
         }
 
-    # 5. Update config and export
+    # 4. Update config and export
     new_config["needs_reselection"] = needs_reselection
     ENSEMBLE_CONFIG_PATH.write_text(json.dumps(new_config, indent=2))
     logger.info(f"ensemble_config.json updated: MAE {old_mae:.3f} → {new_mae:.3f}")

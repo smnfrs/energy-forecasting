@@ -4,8 +4,8 @@ Produces a 24h D+1 price forecast using the production SLSQP ensemble.
 
 Steps:
 1. Load ensemble_config.json
-2. Load merged.parquet and apply EMA overlay (uses live gen/load forecasts)
-3. Extend dataset to D+1 delivery hours (forward-fill known features)
+2. Load merged.parquet and extend it to D+1 delivery hours
+3. Build strict source-neutral forecast_* columns from own gen/load artifacts
 4. Compute price feature matrix for each unique feature_version
 5. Load each non-zero-weight base model and predict 24 D+1 hours
 6. Apply SLSQP ensemble weights → blend forecast
@@ -87,15 +87,11 @@ def _extend_to_forecast_date(
 
     extended = extended[~extended.index.duplicated(keep="last")]
 
-    # Forward-fill all feature columns for D+1 rows.
-    # - Commodity prices (daily data): ffill propagates yesterday's close
-    # - Temporal indicators (regime, etc.): ffill from D-1 as placeholder;
-    #   the actual temporal feature values are computed at engineer_features time
-    # - SMARD day-ahead generation forecasts (prognostizierte_*): SMARD publishes
-    #   these for D+1 around 18:00 CET D-1; by 08:00 UTC they're already in
-    #   the raw data from the data update step. If not yet available, ffill.
-    # Target column stays NaN so engineer_features drops it for the D+1 rows
-    # if 'target_price__target' is used.
+    # Forward-fill all non-target columns for D+1 rows. Commodity prices
+    # legitimately use the latest known close, and temporal placeholders are
+    # recomputed by engineer_features. Generation/load price features are not
+    # taken from this ffill: build_forecast_columns overwrites forecast_* from
+    # own gen/load artifacts and fails closed if D+1 coverage is incomplete.
     original_before_fill = extended.copy()
     feature_cols = [c for c in extended.columns if c != PRICE_TARGET]
     extended[feature_cols] = extended[feature_cols].ffill()
@@ -155,18 +151,32 @@ def _trained_feature_columns(feature_version: str, ds_name: str) -> list[str]:
             names = pq.read_schema(ds_path).names
         except Exception:
             names = list(pd.read_parquet(ds_path).columns)
-        return [c for c in names if not c.endswith("__target") and c != "__index_level_0__"]
+        feature_cols = [c for c in names if not c.endswith("__target") and c != "__index_level_0__"]
+        _validate_trained_price_schema(feature_cols, source=str(ds_path))
+        return feature_cols
 
     cols_path = MODELS_DIR / "price_feature_cols.json"
     if cols_path.exists():
         all_cols = json.loads(cols_path.read_text())
         if feature_version in all_cols:
-            return [c for c in all_cols[feature_version] if c != "__index_level_0__"]
+            feature_cols = [c for c in all_cols[feature_version] if c != "__index_level_0__"]
+            _validate_trained_price_schema(feature_cols, source=str(cols_path))
+            return feature_cols
 
     raise FileNotFoundError(
         f"No trained feature-column list found for {feature_version}. "
         f"Expected {ds_path} or {cols_path}."
     )
+
+
+def _validate_trained_price_schema(feature_cols: list[str], *, source: str) -> None:
+    """Fail closed if persisted production schemas still contain raw SMARD forecasts."""
+    from energy_forecasting.features.validation import validate_price_feature_list
+
+    try:
+        validate_price_feature_list(feature_cols)
+    except ValueError as exc:
+        raise ValueError(f"Unsafe trained price feature schema in {source}: {exc}") from exc
 
 
 def _engineer_features_for_version(
@@ -226,15 +236,11 @@ def run_price_inference(
     df = pd.read_parquet(merged_path)
     logger.info(f"Loaded merged data: {df.shape}, last={df.index[-1]}")
 
-    # Extend to the intended D+1 delivery date first, then apply the EMA
-    # overlay so it covers D+1 rows. The merge step drops future rows (no price
-    # yet), so D+1 prog_* would otherwise be forward-filled from D rather than
-    # using our gen/load model's actual D+1 predictions.
     extended_df, d1_index = _extend_to_forecast_date(df, forecast_date=forecast_date)
 
-    from energy_forecasting.modeling.price import _overlay_ema_forecasts
+    from energy_forecasting.features.forecast_inputs import build_forecast_columns
 
-    extended_df = _overlay_ema_forecasts(extended_df)
+    extended_df = build_forecast_columns(extended_df, strict_index=d1_index)
 
     # Identify which feature_versions are needed (non-zero-weight models only)
     prod_names = set(production_model_names(ensemble_config))
