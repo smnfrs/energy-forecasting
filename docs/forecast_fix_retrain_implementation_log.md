@@ -41,3 +41,26 @@ Preservation exports were written to `docs/archive/price_pre_forecast_contract/`
 - Current `models/ensemble_config.json`, `models/price_feature_cols.json`, production hyperparameters, ensemble weights, conformal settings, and the leakage-inflated 11.148 MAE baseline were copied into the archive.
 
 Decision/change during implementation: the initial MLflow API archive pass was interrupted because per-run `set_tag` calls were too slow for 6,243 runs. The final archive operation uses a single idempotent SQLite transaction that sets `archived=true`, `archive_reason=pre-forecast-contract; leaky/non-comparable`, and `feature_contract=prog_leaky` for experiments `price/feature_selection`, `price/model_training`, and `price/production`. Verification query showed all 6,243 price runs have both archive and `prog_leaky` tags. No artifacts were deleted.
+
+## 2026-07-13 — Dataset Regeneration and Audit
+
+Stale cached price datasets were removed with `rm -f data/processed/datasets/price_*.parquet`, then clean base datasets were regenerated:
+
+- `price_slim.parquet`: 15,535,914 bytes
+- `price_full.parquet`: 21,439,053 bytes
+- `price_max.parquet`: 39,302,664 bytes
+
+The combined regeneration command was interrupted after `slim` and `full` completed because `conda run` buffered output and gave no visibility for several minutes. `max` was rerun separately and completed successfully; the warnings were pandas fragmentation warnings from iterative feature insertion, not correctness failures.
+
+`python scripts/forecast_fix_dataset_audit.py` passed and wrote `dataset_audit.{json,md}`, `forecast_source_counts_by_year.csv`, and `forecast_gen_total_boundary.png` under `docs/archive/price_pre_forecast_contract/`:
+
+- 100,824 merged rows.
+- Forecast source mix: own=36,842 / smard=63,574 / actual=408 / missing=0.
+- All eight `forecast_*` columns have 0 NaN.
+- First own forecast timestamp: 2022-01-15 01:00.
+- Own 2022+ residual identity max absolute error: 0.0.
+- 2022+ `forecast_residual_load` differs materially from old `prog_residual`: mean absolute diff 2,918 MW, max diff 37,436 MW, 36,833 rows differ by more than 1 MW.
+- Holdout window source mix: own=54 / smard=2,106 / actual=0 / missing=0.
+- Regenerated dataset schemas contain no `prog_`, `pct_prog_`, or `prognostiziert` tokens.
+
+Decision/change during implementation: the first residual identity gate incorrectly checked all fallback rows, including SMARD rows where operator residual is not required to equal the derived wind/PV sum. The gate was corrected to the plan's intended scope: 2022+ rows sourced from own forecast artifacts.
