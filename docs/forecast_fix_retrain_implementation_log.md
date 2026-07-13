@@ -90,3 +90,16 @@ setsid nohup bash -c 'echo $$ > logs/price_stage_a_feature_selection_20260713.lo
 - PID file: `logs/price_stage_a_feature_selection_20260713.log.pid`
 - Detach verification: `PPID=1`, `SID=3050617`, `TT=?`.
 - Initial log shows reuse of the regenerated clean `price_max.parquet` and `price_slim.parquet` datasets.
+
+## 2026-07-13 — Stage A RFECV Runtime Note
+
+Stage A reached RFECV at 21:23:02 Europe/Berlin and remained active beyond the original 1-2h estimate. Health checks around 23:50 showed the detached `conda run` PID 3050617 and Python child 3050640 still running, stable memory (~5.4%) and active CPU. The log was still adding repeated sklearn `X does not have valid feature names` warnings from RFECV/LGBM fits, with no traceback or completion line.
+
+Current monitor points:
+
+```bash
+ps -o pid,ppid,sid,tty,etime,%cpu,%mem,cmd -p 3050617,3050640
+tail -n 120 logs/price_stage_a_feature_selection_20260713.log
+```
+
+Do not delete `data/optuna`; Stage A has not yet reached the pinned Optuna tuning stage, but the forecast-contract-scoped study naming is now in place for when tuning starts.
