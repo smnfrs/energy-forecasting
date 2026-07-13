@@ -72,3 +72,21 @@ Before launching Stage A/B, existing `data/optuna` contents showed pre-contract 
 Code change: Optuna study names now include `FEATURE_CONTRACT`, e.g. `forecast_v1__fs_rfecv_optimum__LGBMRegressor__stage2_grid`. This keeps crash-resume semantics within the new contract while isolating the old `prog_leaky` search DBs.
 
 Validation: `conda run -n energy-forecasting pytest tests/test_tuning.py -q` passed (14 tests), plus `py_compile` for `tuning.py`.
+
+## 2026-07-13 — Stage A Feature Selection Launch
+
+Before Stage A, `data/optuna` and `data/processed/datasets` were snapshotted to `data/retrain_checkpoints/forecast_fix_20260713/`.
+
+First launch note: the initial detached command used `conda run` without `--no-capture-output`, which left the log empty and wrote the short-lived wrapper PID. That process group was terminated before relaunch.
+
+Active Stage A launch:
+
+```bash
+setsid nohup bash -c 'echo $$ > logs/price_stage_a_feature_selection_20260713.log.pid; exec conda run --no-capture-output -n energy-forecasting energy-forecasting train price --feature-selection --use-rfecv --top-k 4' </dev/null > logs/price_stage_a_feature_selection_20260713.log 2>&1 &
+```
+
+- PID: 3050617
+- Log: `logs/price_stage_a_feature_selection_20260713.log`
+- PID file: `logs/price_stage_a_feature_selection_20260713.log.pid`
+- Detach verification: `PPID=1`, `SID=3050617`, `TT=?`.
+- Initial log shows reuse of the regenerated clean `price_max.parquet` and `price_slim.parquet` datasets.
