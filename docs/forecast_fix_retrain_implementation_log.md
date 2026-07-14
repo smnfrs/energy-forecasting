@@ -103,3 +103,36 @@ tail -n 120 logs/price_stage_a_feature_selection_20260713.log
 ```
 
 Do not delete `data/optuna`; Stage A has not yet reached the pinned Optuna tuning stage, but the forecast-contract-scoped study naming is now in place for when tuning starts.
+
+## 2026-07-14 — Stage A Completion and Promotion Gate
+
+Stage A completed at 03:44 Europe/Berlin. The process exited cleanly and wrote a
+new `models/ensemble_config.json`.
+
+Important discovery/change from the plan: `energy-forecasting train price
+--feature-selection --use-rfecv --top-k 4` did not stop after feature selection.
+After selecting the top feature sets, the CLI continued into forecast-contract
+tuning, final retraining, ensemble blending, and conformal calibration.
+
+Stage A selected/evaluated these feature versions in the generated ensemble:
+
+- `fs_corr_filtered`
+- `fs_shap_top250`
+- `fs_shap_top75`
+- `fs_shap_top78`
+
+The generated ensemble used `slsqp_optimized` blending and achieved:
+
+- Holdout MAE: 15.772
+- RMSE: 36.265
+- R2: 0.762
+- PI coverage: 90.05%
+- Conformal quantile: 31.203
+
+Decision: do not promote this generated ensemble yet. It is clean under the
+`forecast_v1` contract and therefore honest/non-comparable to the old leaky
+11.148 MAE production baseline, but it is still a large regression in absolute
+holdout performance and needs the planned Stage B/backtest analysis before
+release. The modified `models/ensemble_config.json` is therefore treated as a
+research output for now, not as a production release artifact.
+
