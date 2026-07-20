@@ -1,7 +1,7 @@
 # Forecast Fix Retrain Implementation Log
 
 **Started:** 2026-07-13
-**Plan:** `docs/forecast_fix_retrain_plan.md`
+**Plan:** `forecast_fix_retrain_plan.md`
 
 This log records implementation checkpoints, decisions, and discoveries made while executing the retrain plan.
 

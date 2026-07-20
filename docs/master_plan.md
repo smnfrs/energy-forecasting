@@ -1056,7 +1056,7 @@ Extend to forecast prices across multiple European bidding zones simultaneously.
 
 ### Stage 10 Evaluation
 
-**Status:** implemented 2026-07-09 — yearly-recap facts pipeline, real per-instance SHAP attribution wired into `run_price_inference` (verified against real production models to ~1.7e-5 EUR/MWh), two Groq-based narrative calls (weekly yearly recap + daily forecast driver explanation), new `deploy/story/forecast/index.html` page, cross-linked with Stage 9. 535 tests passing (34 new). Not yet committed, deployed, or wired into CI secrets — see `docs/stage10_ai_narrative_forecast_story.md` for the remaining manual steps.
+**Status:** implemented and deployed 2026-07-09 — yearly-recap facts pipeline, real per-instance SHAP attribution wired into `run_price_inference` (verified against real production models to ~1.7e-5 EUR/MWh), two Groq-based narrative calls (weekly yearly recap + daily forecast driver explanation), new `deploy/story/forecast/index.html` page, cross-linked with Stage 9. 535 tests passing (34 new). `GROQ_API_KEY` added as a GitHub Actions secret; weekly data refresh handled by `.github/workflows/story_data.yml`. See `docs/stage10_ai_narrative_forecast_story.md`.
 
 ---
 

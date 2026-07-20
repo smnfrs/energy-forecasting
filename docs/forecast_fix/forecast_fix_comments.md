@@ -1,7 +1,7 @@
 # Forecast Fix Plan Review Comments
 
 **Date:** 2026-07-13
-**Scope:** Review comments on `docs/forecast_fix.md`; no implementation changes.
+**Scope:** Review comments on `forecast_fix.md`; no implementation changes.
 
 ---
 
@@ -9,7 +9,7 @@
 
 ### 1. DST guidance conflicts with the repo's current timestamp contract
 
-`docs/forecast_fix.md` says spring-forward has 23 rows and fall-back has 25, and asks for 23/25-hour tests. But current `merged.parquet` is tz-naive and has 24 non-duplicate rows on the DST transition dates checked:
+`forecast_fix.md` says spring-forward has 23 rows and fall-back has 25, and asks for 23/25-hour tests. But current `merged.parquet` is tz-naive and has 24 non-duplicate rows on the DST transition dates checked:
 
 - `2024-03-31`
 - `2024-10-27`

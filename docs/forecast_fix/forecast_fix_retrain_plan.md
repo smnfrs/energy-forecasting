@@ -1,7 +1,7 @@
 # Forecast Fix — Cleanup & Retrain Plan
 
 **Date:** 2026-07-13
-**Depends on:** `docs/forecast_fix.md` (implementation landed in commits `df9206c`, `121621d`)
+**Depends on:** `forecast_fix.md` (implementation landed in commits `df9206c`, `121621d`)
 **Status:** Decisions made — MLflow **staged archive-then-prune**, tuning **full re-tune with checkpoints**, production **disable price step** during the window. See §2, §5, §9.
 
 ---
