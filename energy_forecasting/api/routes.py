@@ -143,7 +143,7 @@ def models() -> ModelsResponse:
     ]
     return ModelsResponse(
         target=meta.get("target", "price"),
-        ensemble_method=meta.get("ensemble_method", "slsqp_optimized"),
+        ensemble_method=meta.get("ensemble_method", "inverse_mae"),
         models=model_list,
         holdout_mae=meta.get("holdout_mae", 0.0),
         holdout_rmse=meta.get("holdout_rmse", 0.0),

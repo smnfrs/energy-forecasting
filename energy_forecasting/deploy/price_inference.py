@@ -1,6 +1,6 @@
 """Daily price inference pipeline.
 
-Produces a 24h D+1 price forecast using the production SLSQP ensemble.
+Produces a 24h D+1 price forecast using the production weight ensemble.
 
 Steps:
 1. Load ensemble_config.json
@@ -8,7 +8,7 @@ Steps:
 3. Build strict source-neutral forecast_* columns from own gen/load artifacts
 4. Compute price feature matrix for each unique feature_version
 5. Load each non-zero-weight base model and predict 24 D+1 hours
-6. Apply SLSQP ensemble weights → blend forecast
+6. Apply production ensemble weights → blend forecast
 7. Apply conformal PI calibration from ensemble_config
 
 The output is a DataFrame with 24 rows and columns [y_pred, y_lower, y_upper]
@@ -224,7 +224,7 @@ def run_price_inference(
     ensemble_config: dict | None = None,
     forecast_date: date | None = None,
 ) -> pd.DataFrame:
-    """Produce a 24h D+1 price forecast using the production SLSQP ensemble.
+    """Produce a 24h D+1 price forecast using the production weight ensemble.
 
     Returns a 24-row DataFrame with columns [y_pred, y_lower, y_upper] indexed
     by D+1 delivery hour timestamps (tz-naive local time).

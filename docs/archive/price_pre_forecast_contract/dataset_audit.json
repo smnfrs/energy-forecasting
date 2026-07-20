@@ -22,8 +22,8 @@
     "forecast_residual_load": 0
   },
   "forecast_source_counts": {
-    "own": 36842,
-    "smard": 63574,
+    "own": 39347,
+    "smard": 61069,
     "actual": 408,
     "missing": 0
   },
@@ -77,8 +77,8 @@
       "missing": 0
     },
     "2022": {
-      "own": 8423,
-      "smard": 337,
+      "own": 8687,
+      "smard": 73,
       "actual": 0,
       "missing": 0
     },
@@ -101,32 +101,57 @@
       "missing": 0
     },
     "2026": {
-      "own": 2115,
-      "smard": 2253,
+      "own": 4356,
+      "smard": 12,
       "actual": 0,
       "missing": 0
     }
   },
-  "first_own_forecast_timestamp": "2022-01-15T01:00:00",
+  "first_own_forecast_timestamp": "2022-01-04T01:00:00",
   "boundary_plot": "docs/archive/price_pre_forecast_contract/forecast_gen_total_boundary.png",
   "own_2022_plus_residual_identity_max_abs_error": 0.0,
   "prog_residual_comparison": {
     "rows_compared_2022_plus": 39432,
-    "mean_abs_diff": 2918.376907826674,
-    "max_abs_diff": 37435.739527690996,
-    "rows_different_gt_1mw": 36833
+    "mean_abs_diff": 3116.06135984623,
+    "max_abs_diff": 23801.878579374068,
+    "rows_different_gt_1mw": 39335
   },
-  "holdout_start_exclusive": "2026-04-02T23:00:00",
+  "holdout_start": "2026-04-03T00:00:00",
+  "holdout_end": "2026-07-01T23:00:00",
   "holdout_source_counts": {
-    "own": 54,
-    "smard": 2106,
+    "own": 2148,
+    "smard": 12,
     "actual": 0,
     "missing": 0
   },
   "dataset_schema_audit": {
     "datasets": {
-      "price_full.parquet": {
-        "n_columns": 144,
+      "price_fs_rfecv_curve.parquet": {
+        "n_columns": 2,
+        "banned_columns": []
+      },
+      "price_fs_shap_curve.parquet": {
+        "n_columns": 3,
+        "banned_columns": []
+      },
+      "price_fs_shap_ranking.parquet": {
+        "n_columns": 2,
+        "banned_columns": []
+      },
+      "price_fs_shap_top130.parquet": {
+        "n_columns": 132,
+        "banned_columns": []
+      },
+      "price_fs_shap_top90.parquet": {
+        "n_columns": 92,
+        "banned_columns": []
+      },
+      "price_fs_shap_top96.parquet": {
+        "n_columns": 98,
+        "banned_columns": []
+      },
+      "price_fs_shap_top99.parquet": {
+        "n_columns": 101,
         "banned_columns": []
       },
       "price_max.parquet": {

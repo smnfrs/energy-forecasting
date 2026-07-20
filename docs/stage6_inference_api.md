@@ -1,7 +1,7 @@
 # Stage 6: Inference, API & CI/CD
 
 **Date written:** 2026-06-30  
-**Preceded by:** Stage 5c complete (production ensemble holdout MAE 11.148)  
+**Preceded by:** Stage 5c complete (EP-faithful price ensemble; the current holdout MAE lives in `models/ensemble_config.json`, not here — the original 11.148 figure was later found leaky and retired, see `docs/bug-fixes/ep_fidelity_reproduction_plan.md`)  
 **Detailed plan for:** `docs/master_plan.md` §6
 
 ---
@@ -145,7 +145,7 @@ Sum per-TSO forecasts to national level, matching the `export_national_forecasts
 
 **Function:** `run_price_inference(forecast_date: date | None = None) -> pd.DataFrame`
 
-**Status update (2026-07-13):** the original Stage 6 plan assumed SMARD D+1 `prognostizierte_*` values could be present or forward-filled for the 08:00 UTC forecast run. That assumption is wrong. This section is superseded by the forecast-column contract in `docs/forecast_fix.md`: live D+1 price inference must use own gen/load forecast artifacts and must not use SMARD D+1 values.
+**Status update (2026-07-13):** the original Stage 6 plan assumed SMARD D+1 `prognostizierte_*` values could be present or forward-filled for the 08:00 UTC forecast run. That assumption is wrong. This section is superseded by the forecast-column contract in `docs/forecast_fix/forecast_fix.md`: live D+1 price inference must use own gen/load forecast artifacts and must not use SMARD D+1 values.
 
 **Corrected steps:**
 1. Load `models/ensemble_config.json`.
@@ -512,7 +512,7 @@ sync:          # pull latest data/models from GitHub Release
 
 **OQ2: Weather data availability at inference time.** `forecast.parquet` (Open-Meteo "current forecast" endpoint) provides 14-day ahead forecasts and is updated at each data collection run. At 08:00 UTC, D+1 (tomorrow) through D+14 forecast weather is available. Verify the `forecast.parquet` timestamp range includes D+1 hours 0–23 UTC (=D+1 hours 1–24 CET during winter, 2–25 CET during summer, adjusted for delivery hours).
 
-**OQ3: Price forecast feature availability.** Resolved 2026-07-13: SMARD D+1 `prognostizierte_*` values are not valid inputs for the 08:00 UTC price forecast. D+1 generation/load price features must be source-neutral `forecast_*` columns backed by complete own forecast artifacts, with strict failure if coverage is incomplete. See `docs/forecast_fix.md`.
+**OQ3: Price forecast feature availability.** Resolved 2026-07-13: SMARD D+1 `prognostizierte_*` values are not valid inputs for the 08:00 UTC price forecast. D+1 generation/load price features must be source-neutral `forecast_*` columns backed by complete own forecast artifacts, with strict failure if coverage is incomplete. See `docs/forecast_fix/forecast_fix.md`.
 
 **OQ4: What to do about gen/load PI at inference time.** The gen/load models that use recursive lags bypass MAPIE (as documented in 5b). Their `y_lower/y_upper` columns are NaN in historical_forecasts parquets. At inference, we apply the `conformal_quantile` from the ensemble run (if the best run was an ensemble) or from the base model's run metrics. If the chosen model is a recursive-lag model with no conformal calibration, report PI as None in the API response.
 

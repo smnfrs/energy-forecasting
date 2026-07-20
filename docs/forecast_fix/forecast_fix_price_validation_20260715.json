@@ -1,0 +1,55 @@
+{
+  "config_path": "/home/smnfrs/projects/energy-forecasting/models/ensemble_config.json",
+  "merged_path": "data/processed/merged.parquet",
+  "ensemble_method": "slsqp_optimized",
+  "config_metrics": {
+    "mae": 16.284051783946563,
+    "rmse": 35.46153674644268,
+    "me": 3.672545743039028,
+    "r2": 0.772254871203901,
+    "mape": 1125.6039788431658,
+    "smape": 35.23503259797777,
+    "conformal_quantile": 29.375528703945022,
+    "pi_coverage": 0.9004629629629629,
+    "pi_width": 58.75105740789004
+  },
+  "nonzero_weights": {
+    "LGBMRegressor__fs_shap_top130": 0.7391196519107314,
+    "LGBMRegressor__fs_shap_top99": 0.1117870809259641,
+    "Ridge__fs_shap_top130": 0.11187575860541639,
+    "Ridge__fs_shap_top99": 0.03721750855788309
+  },
+  "holdout_start": "2026-04-03T00:00:00",
+  "holdout_end": "2026-07-01T23:00:00",
+  "holdout_rows": 2160,
+  "slices": [
+    {
+      "name": "all_holdout",
+      "rows": 2160,
+      "model_mae": 16.284051783946563,
+      "baseline_mae": 34.289371490478516,
+      "mae_skill_vs_baseline": 0.5250991465834152
+    },
+    {
+      "name": "high_solar_top_decile",
+      "rows": 216,
+      "model_mae": 28.12251336663497,
+      "baseline_mae": 55.293277740478516,
+      "mae_skill_vs_baseline": 0.49139362837867473
+    },
+    {
+      "name": "negative_price_hours",
+      "rows": 249,
+      "model_mae": 26.7704298615596,
+      "baseline_mae": 68.09037017822266,
+      "mae_skill_vs_baseline": 0.6068397074139922
+    },
+    {
+      "name": "residual_load_ramp_top_decile",
+      "rows": 216,
+      "model_mae": 16.306795502472557,
+      "baseline_mae": 36.92682647705078,
+      "mae_skill_vs_baseline": 0.5584024662231163
+    }
+  ]
+}

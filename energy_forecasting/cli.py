@@ -1138,18 +1138,68 @@ def retrain_cmd(
     holdout_days: int = typer.Option(
         None, "--holdout-days", help="Override holdout days for degradation check"
     ),
+    mode: str = typer.Option(
+        "reweight",
+        "--mode",
+        help="Price retrain mode: steady-state reweight or bootstrap/full-candidate reselection",
+    ),
 ):
     """Retrain price ensemble. Gen/load retrain must be run manually (8-12 hours)."""
     from energy_forecasting.deploy.retrain import run_retrain
 
-    result = run_retrain(price_only=price_only, force=force, holdout_days=holdout_days)
+    result = run_retrain(price_only=price_only, force=force, holdout_days=holdout_days, mode=mode)
     if result.get("needs_reselection"):
         logger.warning(
             "needs_reselection=True: new ensemble MAE degraded beyond threshold. "
-            "Run 'energy-forecasting train price --feature-selection' to reselect candidates."
+            "Run 'energy-forecasting deploy retrain --mode reselection' to retrain all candidates and reselect."
         )
     else:
         logger.info(
             f"Retrain complete. New MAE: {result.get('new_mae', '?'):.3f}, "
             f"previous: {result.get('old_mae', '?'):.3f}"
         )
+
+
+# ── Research commands ─────────────────────────────────────────────
+
+research_app = typer.Typer(help="Diagnostic and research utilities")
+app.add_typer(research_app, name="research")
+
+
+@research_app.command("ensemble-compare")
+def research_ensemble_compare(
+    config: Path = typer.Option(None, "--config", help="Path to ensemble_config.json"),
+    scope: str = typer.Option(
+        "production",
+        "--scope",
+        help="Comparison scope: production or all-candidates",
+    ),
+    run_id: list[str] = typer.Option(None, "--run-id", help="Explicit MLflow run ID"),
+    methods: str = typer.Option(None, "--methods", help="Comma-separated method subset"),
+    csv: Path = typer.Option(None, "--csv", help="Optional CSV output path"),
+    markdown: Path = typer.Option(None, "--markdown", help="Optional Markdown output path"),
+    mlflow: bool = typer.Option(False, "--mlflow", help="Log comparison to MLflow"),
+):
+    """Compare diagnostic price-ensemble methods over existing artifacts."""
+    from scripts.ensemble_method_comparison import (
+        _log_to_mlflow,
+        _parse_methods,
+        _write_markdown,
+        run_comparison,
+    )
+
+    from energy_forecasting.deploy.model_store import ENSEMBLE_CONFIG_PATH
+
+    table = run_comparison(
+        config_path=config or ENSEMBLE_CONFIG_PATH,
+        scope=scope,
+        run_ids=run_id,
+        methods=_parse_methods(methods),
+    )
+    typer.echo(table.to_string(index=False))
+    if csv:
+        table.to_csv(csv, index=False)
+    if markdown:
+        _write_markdown(table, markdown)
+    if mlflow:
+        _log_to_mlflow(table)

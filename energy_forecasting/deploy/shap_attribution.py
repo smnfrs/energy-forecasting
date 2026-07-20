@@ -73,11 +73,27 @@ def _fold_weights(k_matrix: np.ndarray) -> np.ndarray:
     return counts / counts.sum()
 
 
-def _unwrap_tree_estimator(fold_estimator):
-    """Return the underlying tree model, unwrapping the CatBoost Pipeline if present."""
+def _unwrap_pipeline_model(fold_estimator):
+    """Return the underlying estimator when a fold estimator is a Pipeline."""
     if hasattr(fold_estimator, "named_steps"):
         return fold_estimator.named_steps["model"]
     return fold_estimator
+
+
+def _linear_terms(fold_estimator, X: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, float]:
+    """Return transformed design matrix, coefficients, and intercept for a linear fold.
+
+    Exported Ridge folds can be either bare estimators or sklearn Pipelines.
+    For Pipelines, MAPIE prediction applies all preprocessing steps before the
+    final linear model, so attribution must use that same transformed matrix to
+    preserve the prediction reconstruction invariant.
+    """
+    linear_model = _unwrap_pipeline_model(fold_estimator)
+    if hasattr(fold_estimator, "steps") and len(fold_estimator.steps) > 1:
+        x_values = np.asarray(fold_estimator[:-1].transform(X))
+    else:
+        x_values = X.to_numpy()
+    return x_values, np.asarray(linear_model.coef_), float(linear_model.intercept_)
 
 
 def _model_shap(
@@ -99,11 +115,10 @@ def _model_shap(
     base_sum = 0.0
     for fold_estimator, w in zip(fold_estimators, weights):
         if is_linear:
-            coefs = fold_estimator.coef_
-            fold_shap = X.to_numpy() * coefs[np.newaxis, :]
-            fold_base = float(fold_estimator.intercept_)
+            x_values, coefs, fold_base = _linear_terms(fold_estimator, X)
+            fold_shap = x_values * coefs[np.newaxis, :]
         else:
-            tree_model = _unwrap_tree_estimator(fold_estimator)
+            tree_model = _unwrap_pipeline_model(fold_estimator)
             explainer = shap.TreeExplainer(tree_model)
             fold_shap = np.asarray(explainer.shap_values(X))
             fold_base = float(np.ravel(explainer.expected_value)[0])

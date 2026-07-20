@@ -11,16 +11,15 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 import pyarrow.parquet as pq
-
 from energy_forecasting.config import PROCESSED_DATA_DIR
+from energy_forecasting.config.modeling import HOLDOUT_DAYS
 from energy_forecasting.features.forecast_inputs import (
     FORECAST_COLUMNS,
-    _derive_from_actuals,
-    _derive_from_artifacts,
-    _derive_from_smard,
-    _load_artifact_layer,
     build_forecast_columns,
+    forecast_source_counts,
+    forecast_source_labels,
 )
+from energy_forecasting.modeling.cv import carve_holdout
 from energy_forecasting.modeling.datasets import DATASET_DIR
 
 OUT_DIR = Path("docs/archive/price_pre_forecast_contract")
@@ -28,20 +27,7 @@ BANNED_TOKENS = ("prog_", "pct_prog_", "prognostiziert")
 
 
 def _source_labels(df: pd.DataFrame) -> pd.Series:
-    artifact = _load_artifact_layer(df.index)
-    own_layer = _derive_from_artifacts(artifact)
-    smard_layer = _derive_from_smard(df)
-    actual_layer = _derive_from_actuals(df)
-
-    own_mask = artifact.notna().all(axis=1)
-    smard_mask = smard_layer.notna().all(axis=1)
-    actual_mask = actual_layer.notna().all(axis=1)
-
-    labels = pd.Series("missing", index=df.index, dtype="object")
-    labels.loc[actual_mask] = "actual"
-    labels.loc[smard_mask] = "smard"
-    labels.loc[own_mask] = "own"
-    return labels
+    return forecast_source_labels(df)
 
 
 def _schema_audit() -> dict:
@@ -113,9 +99,20 @@ def main() -> None:
             "rows_different_gt_1mw": int((diff.abs() > 1.0).sum()),
         }
 
-    holdout_start = audited.index.max() - pd.Timedelta(days=90)
-    holdout_labels = labels.loc[labels.index > holdout_start]
-    holdout_counts = holdout_labels.value_counts().reindex(["own", "smard", "actual", "missing"], fill_value=0)
+    holdout_dataset_path = DATASET_DIR / "price_max.parquet"
+    if holdout_dataset_path.exists():
+        holdout_dataset_index = pd.read_parquet(holdout_dataset_path).index
+        _pool_idx, holdout_idx = carve_holdout(pd.DatetimeIndex(holdout_dataset_index), HOLDOUT_DAYS)
+        holdout_index = pd.DatetimeIndex(holdout_dataset_index)[holdout_idx]
+        holdout_start = holdout_index.min()
+        holdout_end = holdout_index.max()
+        holdout_counts_dict = forecast_source_counts(labels, holdout_index)
+        holdout_counts = pd.Series(holdout_counts_dict)
+    else:
+        holdout_start = audited.index.max() - pd.Timedelta(days=90)
+        holdout_end = audited.index.max()
+        holdout_labels = labels.loc[labels.index > holdout_start]
+        holdout_counts = holdout_labels.value_counts().reindex(["own", "smard", "actual", "missing"], fill_value=0)
 
     schema = _schema_audit()
     boundary_plot = OUT_DIR / "forecast_gen_total_boundary.png"
@@ -135,7 +132,8 @@ def main() -> None:
         "boundary_plot": str(boundary_plot),
         "own_2022_plus_residual_identity_max_abs_error": residual_delta_max,
         "prog_residual_comparison": prog_compare,
-        "holdout_start_exclusive": holdout_start.isoformat(),
+        "holdout_start": holdout_start.isoformat(),
+        "holdout_end": holdout_end.isoformat(),
         "holdout_source_counts": {k: int(v) for k, v in holdout_counts.items()},
         "dataset_schema_audit": schema,
     }

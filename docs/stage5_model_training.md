@@ -112,35 +112,36 @@ HOLDOUT_DAYS = 90
 # 730 days = 2 years. Used by compute_sample_weights() in training.py.
 DEFAULT_WEIGHT_HALF_LIFE = 730.0
 
-# ── Blend candidate selection ─────────────────────────────────────
-# Per category (linear, lgbm, xgboost, catboost): 6 candidates each.
-# Composition: 2 incumbents (from previous ensemble), 1 best-MAE,
-# 1 best-RMSE, 2 random from remaining pool.
-# First run (no incumbents): best-MAE, best-RMSE, 4 random.
-# Random picks are logged — if they consistently outperform top-metric
-# picks in the ensemble, it signals overfitting in the ranked models.
-# Candidates are cloned and retrained during validation (VALIDATION_CV_FOLDS each)
-# and again for final blend training. 24 candidates × 5 folds = 120 fits
-# for validation, plus ~8 final fits — manageable for already-tuned models.
-# Used by select_candidates() in ensemble.py.
-BLEND_CANDIDATES_PER_CATEGORY = 6
-BLEND_CANDIDATES_RANDOM_POOL = 10  # draw 2 random from top-10 after removing incumbents/best
+# ── Ensemble candidate selection ──────────────────────────────────
+# After final validation runs are available, keep the best OOF-MAE and
+# best OOF-RMSE model per available category. The two metrics can select the
+# same model, so the realised count per category is one or two.
+ENSEMBLE_FINAL_PER_CATEGORY = 2
+ENSEMBLE_MIN_MEMBER_WEIGHT = 0.02
+ENSEMBLE_MAX_ALIGNMENT_DROP_FRACTION = 0.05
 
 # ── Degradation detection ─────────────────────────────────────────
 # If (new_mae - old_mae) / old_mae exceeds this, flag needs_reselection.
-# Used by retrain logic in ensemble.py.
-BLEND_DEGRADATION_THRESHOLD = 0.20
+# Used by deploy/retrain.py.
+ENSEMBLE_DEGRADATION_THRESHOLD = 0.20
 
 # ── Ensemble methods to compare at each retrain ───────────────────
-# All methods are evaluated on holdout; best is selected.
-# See ensemble.py for implementations.
+# Production methods fit on OOF predictions and are evaluated on the untouched
+# holdout. Stackers may appear as diagnostic rows, but are not eligible for
+# production config selection until their persistence/inference path exists.
 ENSEMBLE_METHODS = [
     "simple_average",
     "inverse_mae",
+    "inverse_rmse",
+    "top_k_trimmed",
     "slsqp_optimized",
+    "slsqp_floor_2pct",
     "greedy_forward",
+    "greedy_forward_floor_2pct",
     "hill_climbing",
+    "hill_climbing_floor_2pct",
     "simulated_annealing",
+    "simulated_annealing_floor_2pct",
     "diversity_regularized",
     "stacking_ridge",
     "stacking_lgbm",
@@ -157,7 +158,7 @@ GEN_LOAD_HORIZON_HOURS = 168  # 7 days
 
 # ── Price model categories ────────────────────────────────────────
 PEAK_HOURS = list(range(8, 20))
-BLEND_CATEGORY_MATCHERS = {
+ENSEMBLE_CATEGORY_MATCHERS = {
     "linear": ["Ridge", "Lasso", "ElasticNet", "HuberRegressor"],
     "lgbm": ["LGBMRegressor"],
     "xgboost": ["XGBRegressor"],
@@ -1258,23 +1259,25 @@ Step 3: Grid search tuning (price/model_training)
   └─ Uses SEARCH_CV_FOLDS (3) for speed; winners validated with 5 folds later
   └─ Each model type may prefer a different feature set — that's expected
 
-Step 4: Ensemble candidate selection & validation (price/production)
-  └─ select_candidates() — 6 per category from price/model_training:
-     2 incumbents, 1 best-MAE, 1 best-RMSE, 2 random (logged)
-     (first run: best-MAE, best-RMSE, 4 random)
-  └─ validate_candidates() — clone & retrain each with VALIDATION_CV_FOLDS (5)
-     (24 candidates × 5 folds = 120 fits)
-  └─ select_final_models() — pick best from validated candidates
-  └─ train_and_blend() — clone & retrain final models on full train set,
-     compute predictions on holdout
-  └─ compare_ensemble_methods() — all 9 methods on holdout predictions
-  └─ select_best_ensemble()
-  └─ Calibrate ensemble prediction intervals (post-hoc conformal)
-  └─ Save ensemble_config.json
+Step 4: Ensemble construction (price/production) — EP-exact, no bakeoff
+  └─ Final validation/retrain captures OOF + untouched holdout predictions
+  └─ validate_prediction_alignment() — fail on duplicate indexes, y_true mismatches,
+     empty intersections, or excessive common-index row loss
+  └─ select_final_models() — category floor from aligned OOF predictions:
+     best OOF-MAE and best OOF-RMSE model per available family (2 per family)
+  └─ fit_inverse_mae() on the recent holdout — EP's 1/(MAE+ε) weights; no member zeroed
+  └─ Calibrate ensemble prediction intervals on holdout residuals from that
+     fixed ensemble (post-hoc conformal — the one sanctioned EP deviation)
+  └─ Save ensemble_config.json with fit/metric/calibration window provenance
+  └─ (compare_ensemble_methods / select_best_ensemble are NOT called here —
+     they are diagnostic-only, via scripts/ensemble_method_comparison.py)
 
-Step 5: Retrain from committed params (for CI)
-  └─ load_best_params() → clone & retrain all models from scratch
-  └─ Recompute ensemble weights on fresh holdout
+Step 5: Retrain from committed params (for CI) — rebuild features from fresh merged
+  └─ rebuild_price_dataset_from_merged(): re-engineer the frozen feature columns
+     from the current merged.parquet (fixes "stuck in April")
+  └─ mode=reweight: retrain current production members from scratch on the rolling
+     train split, recompute inverse-MAE weights on the recent holdout
+  └─ mode=reselection: retrain every configured candidate, then re-run the category floor
   └─ Degradation check vs previous ensemble
 ```
 
@@ -1282,41 +1285,42 @@ Each step is an MLflow experiment. Results are persistent and reviewable. Every 
 
 ### `ensemble_config.json` Schema
 
-Committed to repo. Contains everything needed to retrain from scratch without MLflow access.
+Committed to repo. Contains everything needed to retrain from scratch without MLflow access. The authoritative serialized shape is produced by `ensemble_config_dict()`; the block below is illustrative (numbers are placeholders — the real values are regenerated artifacts, not doc constants).
 
 ```json
 {
-  "created": "2026-04-01T12:00:00Z",
-  "ensemble_method": "greedy_forward",
-  "conformal_quantile": 14.2,
-  "blend_mae": 9.93,
-  "blend_rmse": 15.12,
-  "blend_r2": 0.78,
+  "ensemble": {
+    "method": "inverse_mae",
+    "weights_fit_window": "recent_holdout",
+    "weights": {"LGBMRegressor__fs_shap_top99": 0.135, "...": "..."}
+  },
+  "metrics": {
+    "mae": "...", "rmse": "...", "me": "...", "r2": "...",
+    "metric_window": "recent_holdout_in_sample",
+    "fit_window": "recent_holdout",
+    "holdout_row_count": 2160, "oof_row_count": "...",
+    "conformal_quantile": "...", "pi_coverage": "...", "pi_width": "..."
+  },
+  "conformal_quantile": "...",
   "models": [
     {
-      "name": "lgbm_0",
-      "model_class": "LGBMRegressor",
-      "category": "lgbm",
-      "source_run_id": "abc123",
-      "dataset_path": "data/processed/datasets/price_shap_top40.parquet",
-      "feature_version": "shap_top40",
-      "feature_list": ["price_h24", "prog_residual", "..."],
-      "hyperparams": {"n_estimators": 1000, "learning_rate": 0.012, "...": "..."},
-      "preprocessing": {"scaler": "none", "target_transform": "none", "weight_half_life": 730},
-      "weight": 0.132,
-      "holdout_mae": 10.38,
-      "holdout_rmse": 15.75,
-      "selection_reason": "incumbent"
+      "name": "LGBMRegressor__fs_shap_top99",
+      "run_id": "abc123",
+      "model_type": "LGBMRegressor",
+      "feature_version": "fs_shap_top99",
+      "config": {"model_type": "LGBMRegressor", "model_params": {"...": "..."},
+                 "scaler": "none", "target_transform": "none", "weight_half_life": 730}
     }
-  ]
+  ],
+  "artifact_generation": {"mode": "bootstrap_reselection", "all_candidates_fresh": true}
 }
 ```
 
-Key fields per model:
-- `feature_list` + `hyperparams` + `preprocessing` = enough to rebuild the model from raw data
-- `source_run_id` + `dataset_path` = provenance (run ID for MLflow traceability, path for data)
-- `selection_reason` = "incumbent" | "best_mae" | "best_rmse" | "random" (tracks how each model entered the ensemble)
-- `weight` = ensemble weight assigned by the selected method
+Notes:
+- `config` (hyperparams + preprocessing) + `feature_version` = enough to rebuild the model from raw data via `rebuild_price_dataset_from_merged()`.
+- `run_id` = MLflow provenance.
+- `weights` are EP inverse-MAE weights fit on the recent holdout; `models` lists the full candidate universe (weight 0 members are retained as reusable configs), and `production_model_names()` returns the non-zero members.
+- `metrics.mae` is the in-sample recent-holdout number (EP's optimistic `blend_mae` convention), **not** a target — see the deviations/principle note in `docs/bug-fixes/`.
 
 **Inference with multiple feature lists:** Models in the ensemble may use different feature sets (e.g. model A uses SHAP-top-40, model B uses FULL-130). At inference (stage 6), the pipeline must compute the **union** of all feature lists, then each model selects its subset. `engineer_features(df, union_list)` is called once; each model indexes into the result. This avoids redundant computation while allowing per-model feature sets.
 
@@ -1324,40 +1328,28 @@ Key fields per model:
 
 ## 5c.5 Ensemble Methods
 
-**`energy_forecasting/modeling/ensemble.py`** — single module containing all nine methods plus auto-selection. The legacy `modeling/blend.py` and `modeling/stacking.py` stub files are deleted as part of this stage; do not split ensemble logic across multiple files.
+**`energy_forecasting/modeling/ensemble.py`** — single module containing EP-faithful production ensemble construction plus a retained diagnostic method registry (weight methods, stackers), candidate selection, alignment validation, and config serialization. The legacy `modeling/blend.py` and `modeling/stacking.py` stub files are deleted as part of this stage; do not split ensemble logic across multiple files.
 
-**Standing methodology:** all 9 methods are evaluated on every retrain (not just the EP-baseline winner `greedy_forward`). The cost is small once base models are trained, and this lets the production ensemble switch methods automatically if a different one wins on future data — important because the EP ranking was established on a different evaluation window and may not hold as the data evolves. `compare_ensemble_methods()` runs the full set; `select_best_ensemble()` picks by holdout MAE; the chosen method is recorded in `ensemble_config.json` and can change between retrains without code changes.
+> **Reworked 2026-07-20 (EP-fidelity).** Production no longer runs a method
+> bakeoff or auto-selects a winner. It reproduces EP verbatim — see
+> `docs/bug-fixes/ep_fidelity_reproduction_plan.md`. The methods below are retained
+> only as a **diagnostic registry** behind `scripts/ensemble_method_comparison.py`;
+> production never selects from them.
 
-### Weight-Based Methods
+### Production construction (EP-exact)
 
-All take `preds_matrix` (n_samples × n_models) and `y_true`:
+`build_production_ensemble()` is the only production path:
 
-| Method | Description | EP Result (MAE) |
-|---|---|---|
-| `simple_average` | Equal weights | Baseline |
-| `inverse_mae` | `1/(mae+ε)`, 150-day trailing window | 10.29 |
-| `slsqp_optimized` | Scipy SLSQP on OOF MAE, `Σw=1, w≥0` | 10.74 |
-| `greedy_forward` | Add best-improving model iteratively | **10.22** |
-| `hill_climbing` | Greedy + swap/drop perturbations | 10.40 |
-| `simulated_annealing` | Stochastic model selection | 10.37 |
-| `diversity_regularized` | Greedy with diversity bonus (α=0.05) | 10.33 |
+1. Align base-model OOF + holdout predictions (`stack_model_predictions`, hard alignment checks).
+2. **Category floor** (`select_final_models`): keep best-MAE + best-RMSE model per model family (linear / lgbm / xgboost / catboost), with EP's second-best-RMSE fallback when one model wins both — up to 8 members, 2 per populated family. No member is ever zeroed.
+3. **Inverse-MAE weights** (`fit_inverse_mae`) fit on the **recent holdout** (`1/(MAE+ε)`, normalised) — EP's `_compute_inverse_mae_weights`.
+4. Post-hoc conformal PI calibrated on those in-sample holdout residuals (the one sanctioned deviation from EP).
 
-### Stacking Methods
+The method is always `inverse_mae`; it does not change between retrains. Metrics are labelled `recent_holdout_in_sample` (EP's optimistic `blend_mae` convention); the honest number is the live-forward monitoring log.
 
-| Method | Meta-Learner | EP Result (MAE) |
-|---|---|---|
-| `stacking_ridge` | Ridge(positive=True) | 11.73 |
-| `stacking_lgbm` | LGBMRegressor(n_est=100, depth=3) | 12.28 |
+### Diagnostic method registry (not production)
 
-### Auto-Selection
-
-```python
-def compare_ensemble_methods(base_models, X, y, holdout_days, methods=None) -> pd.DataFrame:
-    """Run all methods, return comparison sorted by holdout MAE."""
-
-def select_best_ensemble(comparison) -> tuple[str, Any, dict]:
-    """Pick winner. Returns (method_name, fitted_ensemble, config)."""
-```
+`compare_ensemble_methods()` fits the full registry on OOF and evaluates on holdout for research only, via `scripts/ensemble_method_comparison.py`. Registry: `simple_average`, `inverse_mae`, `inverse_rmse`, `top_k_trimmed`, `slsqp_optimized`, the `*_floor_2pct` variants, `greedy_forward`, `hill_climbing`, `simulated_annealing`, `diversity_regularized`, and the `stacking_ridge` / `stacking_lgbm` stackers. (EP's own notebook bakeoff historically ranked the greedy/inverse-MAE family around ~10.2–10.4 MAE and stackers ~11.7–12.3 on *EP's* data — a dated reference, not a target for us; if the diagnostic script ever shows a method beating inverse-MAE out-of-sample across retrains, that is the justified case to graduate it, per the reproduce-first principle.)
 
 ---
 

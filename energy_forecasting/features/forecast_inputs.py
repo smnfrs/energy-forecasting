@@ -9,7 +9,6 @@ import pandas as pd
 from energy_forecasting.config import HISTORICAL_FORECASTS_DIR
 from energy_forecasting.modeling.gen_load_forecasts import _align_tz
 
-
 FORECAST_COLUMNS: tuple[str, ...] = (
     "forecast_load",
     "forecast_gen_wind_on",
@@ -100,6 +99,48 @@ def build_forecast_columns(
     }
     return out
 
+
+
+def forecast_source_labels(
+    df: pd.DataFrame,
+    *,
+    forecast_root: Path | None = None,
+) -> pd.Series:
+    """Label each row by the coherent forecast layer used by the waterfall.
+
+    Labels are one of ``own``, ``smard``, ``actual``, or ``missing``. They use
+    the same all-or-none own-artifact rule as ``build_forecast_columns``: if any
+    of the five primary artifacts is missing for a row, that row is not labelled
+    ``own``.
+    """
+    artifact = _load_artifact_layer(df.index, root=forecast_root)
+    smard_layer = _derive_from_smard(df)
+    actual_layer = _derive_from_actuals(df)
+
+    own_mask = artifact.notna().all(axis=1)
+    smard_mask = smard_layer.notna().all(axis=1)
+    actual_mask = actual_layer.notna().all(axis=1)
+
+    labels = pd.Series("missing", index=df.index, dtype="object")
+    labels.loc[actual_mask] = "actual"
+    labels.loc[smard_mask] = "smard"
+    labels.loc[own_mask] = "own"
+    return labels
+
+
+def forecast_source_counts(
+    labels: pd.Series,
+    index: pd.DatetimeIndex | None = None,
+) -> dict[str, int]:
+    """Return stable source-label counts for an optional index subset."""
+    subset = labels if index is None else labels.reindex(index)
+    counts = subset.value_counts(dropna=True)
+    return {
+        "own": int(counts.get("own", 0)),
+        "smard": int(counts.get("smard", 0)),
+        "actual": int(counts.get("actual", 0)),
+        "missing": int(counts.get("missing", 0) + subset.isna().sum()),
+    }
 
 def _load_artifact_layer(index: pd.DatetimeIndex, root: Path | None = None) -> pd.DataFrame:
     root = root if root is not None else HISTORICAL_FORECASTS_DIR

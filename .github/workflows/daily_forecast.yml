@@ -140,11 +140,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run inference (skip data update, price disabled during retrain)
-        run: conda run -n energy-forecasting energy-forecasting deploy forecast --skip-update --no-price
+      - name: Run inference (skip data update)
+        run: conda run -n energy-forecasting energy-forecasting deploy forecast --skip-update
 
-      - name: Generate AI narrative (skipped while price is disabled)
-        if: ${{ false }}
+      - name: Generate AI narrative
         continue-on-error: true
         run: conda run -n energy-forecasting energy-forecasting deploy narrative
         env:

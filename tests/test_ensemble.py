@@ -6,11 +6,14 @@ import numpy as np
 import pandas as pd
 import pytest
 from energy_forecasting.modeling.ensemble import (
+    DIAGNOSTIC_STACKING_METHODS,
     HOLDOUT_FIT_METHODS,
     METHOD_FACTORIES,
     OOF_FIT_METHODS,
+    PRODUCTION_WEIGHT_METHODS,
     StackEnsemble,
     WeightEnsemble,
+    build_production_ensemble,
     compare_ensemble_methods,
     ensemble_config_dict,
     fit_diversity_regularized,
@@ -26,6 +29,8 @@ from energy_forecasting.modeling.ensemble import (
     fit_stacking_ridge,
     fit_top_k_trimmed,
     select_best_ensemble,
+    select_final_models,
+    validate_prediction_alignment,
 )
 
 # ── Fixtures ──────────────────────────────────────────────────────
@@ -50,16 +55,20 @@ def synthetic_preds():
 # ── Registry sanity ───────────────────────────────────────────────
 
 
-def test_all_11_methods_registered():
+def test_all_15_methods_registered():
     expected = {
         "simple_average",
         "inverse_mae",
         "inverse_rmse",
         "top_k_trimmed",
         "slsqp_optimized",
+        "slsqp_floor_2pct",
         "greedy_forward",
+        "greedy_forward_floor_2pct",
         "hill_climbing",
+        "hill_climbing_floor_2pct",
         "simulated_annealing",
+        "simulated_annealing_floor_2pct",
         "diversity_regularized",
         "stacking_ridge",
         "stacking_lgbm",
@@ -67,30 +76,34 @@ def test_all_11_methods_registered():
     assert set(METHOD_FACTORIES) == expected
 
 
-def test_holdout_oof_partition_covers_registry():
-    # Every registered method must be in exactly one of the two sets.
-    assert HOLDOUT_FIT_METHODS.isdisjoint(OOF_FIT_METHODS)
-    assert set(METHOD_FACTORIES) == HOLDOUT_FIT_METHODS | OOF_FIT_METHODS
+def test_oof_partition_covers_registry():
+    assert HOLDOUT_FIT_METHODS == frozenset()
+    assert set(METHOD_FACTORIES) == OOF_FIT_METHODS
 
 
-def test_stacking_methods_are_oof_fit():
-    assert "stacking_ridge" in OOF_FIT_METHODS
-    assert "stacking_lgbm" in OOF_FIT_METHODS
+def test_stacking_methods_are_diagnostic_oof_fit():
+    assert DIAGNOSTIC_STACKING_METHODS == {"stacking_ridge", "stacking_lgbm"}
+    assert DIAGNOSTIC_STACKING_METHODS <= OOF_FIT_METHODS
 
 
-def test_weight_methods_are_holdout_fit():
+def test_weight_methods_are_production_oof_fit():
     for m in [
         "simple_average",
         "inverse_mae",
         "inverse_rmse",
         "top_k_trimmed",
         "slsqp_optimized",
+        "slsqp_floor_2pct",
         "greedy_forward",
+        "greedy_forward_floor_2pct",
         "hill_climbing",
+        "hill_climbing_floor_2pct",
         "simulated_annealing",
+        "simulated_annealing_floor_2pct",
         "diversity_regularized",
     ]:
-        assert m in HOLDOUT_FIT_METHODS, f"{m} should be holdout-fit"
+        assert m in PRODUCTION_WEIGHT_METHODS, f"{m} should be production weight-based"
+        assert m in OOF_FIT_METHODS, f"{m} should be OOF-fit"
 
 
 # ── Individual factories ──────────────────────────────────────────
@@ -224,6 +237,138 @@ def test_predict_array_must_match_shape(synthetic_preds):
         ens.predict(arr)
 
 
+
+
+# -- alignment and category selection --------------------------------------
+
+
+class _Run:
+    def __init__(
+        self,
+        name: str,
+        model_type: str,
+        feature_version: str = "fv",
+        run_id: str | None = None,
+    ):
+        self.name = name
+        self.run_id = run_id or name
+        self.model_type = model_type
+        self.feature_version = feature_version
+
+
+def _prediction_frame(idx, y, pred):
+    return pd.DataFrame({"y_true": y, "y_pred": pred}, index=idx)
+
+
+def test_validate_prediction_alignment_rejects_duplicate_indexes():
+    idx = pd.to_datetime(["2024-01-01 00:00", "2024-01-01 00:00"])
+    frame = _prediction_frame(idx, [1.0, 1.0], [1.0, 1.0])
+    with pytest.raises(ValueError, match="duplicate indexes"):
+        validate_prediction_alignment({"m0": frame}, {"m0": frame})
+
+
+def test_validate_prediction_alignment_rejects_y_true_mismatch():
+    idx = pd.date_range("2024-01-01", periods=3, freq="h")
+    oof = {
+        "m0": _prediction_frame(idx, [1.0, 2.0, 3.0], [1.1, 2.1, 3.1]),
+        "m1": _prediction_frame(idx, [1.0, 9.0, 3.0], [1.2, 2.2, 3.2]),
+    }
+    hold = {
+        "m0": _prediction_frame(idx, [1.0, 2.0, 3.0], [1.1, 2.1, 3.1]),
+        "m1": _prediction_frame(idx, [1.0, 2.0, 3.0], [1.2, 2.2, 3.2]),
+    }
+    with pytest.raises(ValueError, match="y_true mismatch"):
+        validate_prediction_alignment(oof, hold)
+
+
+def test_validate_prediction_alignment_rejects_tiny_intersection():
+    idx0 = pd.date_range("2024-01-01", periods=100, freq="h")
+    idx1 = pd.date_range("2024-02-01", periods=100, freq="h")
+    idx1 = idx1.insert(0, idx0[0])
+    oof = {
+        "m0": _prediction_frame(idx0, np.arange(100), np.arange(100)),
+        "m1": _prediction_frame(idx1, np.arange(101), np.arange(101)),
+    }
+    hold = {
+        "m0": _prediction_frame(idx0, np.arange(100), np.arange(100)),
+        "m1": _prediction_frame(idx0, np.arange(100), np.arange(100)),
+    }
+    with pytest.raises(ValueError, match="drops"):
+        validate_prediction_alignment(oof, hold)
+
+
+def test_select_final_models_keeps_best_mae_and_rmse_per_category():
+    y = pd.Series([0.0, 0.0, 0.0, 10.0])
+    preds = pd.DataFrame(
+        {
+            "ridge_mae": [0.0, 0.0, 0.0, 13.0],
+            "ridge_rmse": [1.0, 1.0, 1.0, 11.0],
+            "lgbm": [0.0, 0.0, 0.0, 12.0],
+        }
+    )
+    runs = [
+        _Run("ridge_mae", "Ridge"),
+        _Run("ridge_rmse", "Ridge"),
+        _Run("lgbm", "LGBMRegressor"),
+    ]
+    selected, metrics = select_final_models(runs, preds, y)
+    assert {r.name for r in selected} == {"ridge_mae", "ridge_rmse", "lgbm"}
+    assert metrics[metrics["model"] == "ridge_mae"].iloc[0]["selected"]
+    assert metrics[metrics["model"] == "ridge_rmse"].iloc[0]["selected"]
+
+
+def test_select_final_models_uses_second_best_rmse_when_mae_also_wins():
+    y = pd.Series([0.0, 0.0, 0.0, 10.0])
+    preds = pd.DataFrame(
+        {
+            "ridge_best": [0.0, 0.0, 0.0, 10.0],
+            "ridge_second_rmse": [0.5, 0.5, 0.5, 10.5],
+            "ridge_worse": [4.0, 4.0, 4.0, 14.0],
+        }
+    )
+    runs = [
+        _Run("ridge_best", "Ridge"),
+        _Run("ridge_second_rmse", "Ridge"),
+        _Run("ridge_worse", "Ridge"),
+    ]
+
+    selected, metrics = select_final_models(runs, preds, y)
+
+    assert {r.name for r in selected} == {"ridge_best", "ridge_second_rmse"}
+    assert metrics[metrics["model"] == "ridge_best"].iloc[0]["selected_by"] == "linear:oof_mae"
+    assert metrics[metrics["model"] == "ridge_second_rmse"].iloc[0]["selected_by"] == "linear:oof_rmse"
+
+
+def test_build_production_ensemble_fits_inverse_mae_on_recent_holdout():
+    idx_oof = pd.date_range("2024-01-01", periods=8, freq="h")
+    idx_hold = pd.date_range("2024-02-01", periods=8, freq="h")
+    y_oof = np.arange(8.0)
+    y_hold = np.arange(8.0)
+    frames = {
+        "m0": (
+            _prediction_frame(idx_oof, y_oof, y_oof + 0.1),
+            _prediction_frame(idx_hold, y_hold, y_hold + 10.0),
+        ),
+        "m1": (
+            _prediction_frame(idx_oof, y_oof, y_oof + 10.0),
+            _prediction_frame(idx_hold, y_hold, y_hold + 0.1),
+        ),
+    }
+
+    result = build_production_ensemble(
+        [_Run("m0", "Ridge"), _Run("m1", "XGBRegressor")],
+        prediction_loader=lambda run_id: frames[run_id],
+        candidate_model_names={"m0", "m1"},
+    )
+
+    weights = dict(zip(result.ensemble.model_names, result.ensemble.weights, strict=True))
+    assert result.method == "inverse_mae"
+    assert result.comparison.empty
+    assert weights["m1"] > weights["m0"]
+    assert result.metrics["selection_fit_window"] == "recent_holdout"
+    assert result.metrics["metric_window"] == "recent_holdout_in_sample"
+
+
 # ── compare_ensemble_methods ──────────────────────────────────────
 
 
@@ -250,27 +395,21 @@ def test_compare_carries_fitted_via_attrs(synthetic_preds):
         assert method in fitted
 
 
-def test_compare_holdout_oof_routing(synthetic_preds):
-    """Verify that a method in HOLDOUT_FIT_METHODS is genuinely fit on
-    the holdout window (its in-sample MAE on holdout equals the reported
-    MAE under inverse_mae). Catches accidental swapping of fit_X/fit_y."""
+def test_compare_oof_fit_holdout_eval_routing(synthetic_preds):
+    """Production methods fit on OOF and report metrics on holdout."""
     preds_oof, y_oof, preds_hold, y_hold, _ = synthetic_preds
     df = compare_ensemble_methods(preds_oof, y_oof, preds_hold, y_hold)
     inv_mae_row = df[df["method"] == "inverse_mae"].iloc[0]
     fitted = df.attrs["fitted"]["inverse_mae"]
-    # The metadata's per_model_mae should equal the per-model MAE on the
-    # holdout (because it was fit there), not OOF.
-    holdout_maes = [
-        float(np.mean(np.abs(y_hold.to_numpy() - preds_hold[c].to_numpy())))
-        for c in preds_hold.columns
+    oof_maes = [
+        float(np.mean(np.abs(y_oof.to_numpy() - preds_oof[c].to_numpy())))
+        for c in preds_oof.columns
     ]
-    np.testing.assert_allclose(
-        fitted.metadata["per_model_mae"],
-        holdout_maes,
-        rtol=1e-6,
-    )
-    # Sanity: reported holdout MAE matches fresh recomputation
+    np.testing.assert_allclose(fitted.metadata["per_model_mae"], oof_maes, rtol=1e-6)
     fresh = float(np.mean(np.abs(y_hold.to_numpy() - fitted.predict(preds_hold))))
+    assert inv_mae_row["fit_window"] == "oof"
+    assert inv_mae_row["metric_window"] == "holdout"
+    assert bool(inv_mae_row["eligible_for_production"]) is True
     assert inv_mae_row["mae"] == pytest.approx(fresh, rel=1e-9)
 
 
@@ -293,6 +432,30 @@ def test_compare_skip_base_models(synthetic_preds):
         include_base_models=False,
     )
     assert not any(m.startswith("single::") for m in df["method"])
+
+
+def test_compare_marks_stackers_diagnostic_only(synthetic_preds):
+    preds_oof, y_oof, preds_hold, y_hold, _ = synthetic_preds
+    df = compare_ensemble_methods(preds_oof, y_oof, preds_hold, y_hold)
+    stackers = df[df["method"].isin(["stacking_ridge", "stacking_lgbm"])]
+    assert set(stackers["method_kind"]) == {"stacker"}
+    assert not stackers["eligible_for_production"].any()
+
+
+def test_floor_variant_scores_post_floor_weights(synthetic_preds):
+    preds_oof, y_oof, preds_hold, y_hold, _ = synthetic_preds
+    df = compare_ensemble_methods(
+        preds_oof,
+        y_oof,
+        preds_hold,
+        y_hold,
+        methods=["slsqp_floor_2pct"],
+        include_base_models=False,
+    )
+    ens = df.attrs["fitted"]["slsqp_floor_2pct"]
+    assert ens.weights.min() >= 0.02 - 1e-12
+    fresh = float(np.mean(np.abs(y_hold.to_numpy() - ens.predict(preds_hold))))
+    assert df.iloc[0]["mae"] == pytest.approx(fresh, rel=1e-9)
 
 
 def test_compare_subset_of_methods(synthetic_preds):
@@ -322,8 +485,9 @@ def test_select_best_returns_winner(synthetic_preds):
     preds_oof, y_oof, preds_hold, y_hold, _ = synthetic_preds
     df = compare_ensemble_methods(preds_oof, y_oof, preds_hold, y_hold)
     method, ensemble, metrics = select_best_ensemble(df)
-    assert method == df.iloc[0]["method"]
-    assert metrics["mae"] == pytest.approx(df.iloc[0]["mae"])
+    expected = df[df["eligible_for_production"]].sort_values("mae").iloc[0]
+    assert method == expected["method"]
+    assert metrics["mae"] == pytest.approx(expected["mae"])
 
 
 def test_select_best_never_worse_than_best_single():
@@ -393,6 +557,7 @@ def test_config_dict_weight_ensemble_serialises(synthetic_preds):
     assert isinstance(config["models"], list)
     # If a WeightEnsemble was the winner, weights serialise as a dict
     if isinstance(ens, WeightEnsemble):
+        assert config["ensemble"]["weights_fit_window"] == "recent_holdout"
         assert isinstance(config["ensemble"]["weights"], dict)
         assert set(config["ensemble"]["weights"]) == set(names)
 
@@ -401,6 +566,7 @@ def test_config_dict_stack_ensemble_records_meta_learner(synthetic_preds):
     preds_oof, y_oof, *_ = synthetic_preds
     ens = fit_stacking_ridge(preds_oof, y_oof)
     config = ensemble_config_dict(ens, base_runs={}, metrics={"mae": 1.0})
+    assert config["ensemble"]["weights_fit_window"] == "diagnostic_oof"
     assert config["ensemble"]["meta_learner"] == "Ridge"
     assert set(config["ensemble"]["model_names"]) == set(preds_oof.columns)
 

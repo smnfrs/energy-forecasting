@@ -16,7 +16,7 @@ def _make_forecast_json(target, region, unit, n_hours, issued_at="2026-06-30T08:
         "issued_at": issued_at,
         "horizon_hours": n_hours,
         "unit": unit,
-        "ensemble_method": "slsqp_optimized",
+        "ensemble_method": "inverse_mae",
         "model_count": 5,
         "forecasts": [
             {
@@ -33,7 +33,7 @@ def _make_forecast_json(target, region, unit, n_hours, issued_at="2026-06-30T08:
 def _make_metadata_json():
     return {
         "target": "price",
-        "ensemble_method": "slsqp_optimized",
+        "ensemble_method": "inverse_mae",
         "models": [
             {"name": "LGBMRegressor__fs_shap_top90", "category": "lgbm", "weight": 0.346},
             {"name": "XGBRegressor__fs_rfecv_optimum", "category": "xgboost", "weight": 0.197},
@@ -156,7 +156,7 @@ def test_models(client):
     resp = client.get("/models")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["ensemble_method"] == "slsqp_optimized"
+    assert data["ensemble_method"] == "inverse_mae"
     assert len(data["models"]) == 2
     assert data["holdout_mae"] == pytest.approx(11.148)
 

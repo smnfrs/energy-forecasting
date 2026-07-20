@@ -48,3 +48,7 @@ logs/
 # Tooling caches
 .pytest_cache/
 .ruff_cache/
+
+# Local release-staging tarball (workflow uses /tmp; this is a leftover)
+models.tar.gz
+*.tar.gz

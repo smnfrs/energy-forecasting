@@ -5,9 +5,11 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
-
-from energy_forecasting.features.forecast_inputs import build_forecast_columns
-
+from energy_forecasting.features.forecast_inputs import (
+    build_forecast_columns,
+    forecast_source_counts,
+    forecast_source_labels,
+)
 
 ARTIFACT_FILES = {
     "wind_onshore_DE_NATIONAL.parquet": "wind_on",
@@ -154,3 +156,43 @@ def test_strict_mode_spring_forward_interpolates_missing_0200(tmp_path):
     assert len(out.loc[strict_idx]) == 24
     assert out.loc[pd.Timestamp("2025-03-30 02:00"), "forecast_load"] == pytest.approx(2.0)
     assert out.loc[strict_idx, "forecast_load"].notna().all()
+
+
+def test_forecast_source_labels_match_waterfall(tmp_path):
+    idx = pd.date_range("2025-01-01", periods=3, freq="h")
+    _write_artifacts(
+        tmp_path,
+        idx,
+        {
+            "wind_on": [10.0, np.nan, np.nan],
+            "wind_off": [5.0, 5.0, np.nan],
+            "solar": [8.0, 8.0, np.nan],
+            "load": [50.0, 51.0, np.nan],
+            "diff": [3.0, 3.0, np.nan],
+        },
+    )
+    raw = _raw_smard_frame(idx)
+    raw.loc[idx[2], [c for c in raw.columns if c.startswith("prognost")]] = np.nan
+
+    labels = forecast_source_labels(raw, forecast_root=tmp_path)
+
+    assert labels.tolist() == ["own", "smard", "actual"]
+    assert forecast_source_counts(labels, idx) == {
+        "own": 1,
+        "smard": 1,
+        "actual": 1,
+        "missing": 0,
+    }
+
+
+def test_forecast_source_counts_treats_uncovered_reindex_as_missing(tmp_path):
+    idx = pd.date_range("2025-01-01", periods=1, freq="h")
+    labels = pd.Series(["own"], index=idx)
+    requested = pd.date_range("2025-01-01", periods=2, freq="h")
+
+    assert forecast_source_counts(labels, requested) == {
+        "own": 1,
+        "smard": 0,
+        "actual": 0,
+        "missing": 1,
+    }

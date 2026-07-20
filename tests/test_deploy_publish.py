@@ -82,7 +82,7 @@ def test_price_json_is_valid_forecast_response(tmp_path, monkeypatch):
     import energy_forecasting.deploy.model_store as ms
 
     fake_config = {
-        "ensemble": {"method": "slsqp_optimized", "weights": {}},
+        "ensemble": {"method": "inverse_mae", "weights": {}},
         "models": [],
         "conformal_quantile": 24.4,
         "pi_coverage": 0.9,
@@ -456,7 +456,7 @@ def test_write_outputs_always_calls_errors_summary(tmp_path, monkeypatch):
     monkeypatch.setattr(cfg_mod, "PROCESSED_DATA_DIR", tmp_path / "processed")
 
     fake_config = {
-        "ensemble": {"method": "slsqp_optimized", "weights": {}},
+        "ensemble": {"method": "inverse_mae", "weights": {}},
         "models": [],
         "conformal_quantile": 24.4,
         "pi_coverage": 0.9,

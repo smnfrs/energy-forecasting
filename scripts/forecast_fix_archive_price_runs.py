@@ -1,6 +1,6 @@
 """Preserve and archive pre-forecast-contract price MLflow runs.
 
-This is the Phase 2a helper for docs/forecast_fix_retrain_plan.md. It exports
+This is the Phase 2a helper for docs/forecast_fix/forecast_fix_retrain_plan.md. It exports
 small, reviewable summaries before optionally tagging the old price runs as
 archived/pre-contract. It intentionally does not delete artifacts.
 """

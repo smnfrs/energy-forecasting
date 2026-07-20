@@ -149,6 +149,11 @@ def run_inference(skip_update: bool = False, run_price: bool = True) -> dict:
         return {"price": None, "gen_load": gen_load_results}
 
     from energy_forecasting.deploy.price_inference import run_price_inference
+    from energy_forecasting.features.forecast_coverage import assert_monthly_artifact_coverage
+
+    logger.info("Checking historical forecast artifact coverage before price inference...")
+    coverage_report = assert_monthly_artifact_coverage()
+    logger.info(f"Historical forecast artifact coverage OK: {coverage_report}")
 
     logger.info("Running price inference...")
     price_df = run_price_inference()

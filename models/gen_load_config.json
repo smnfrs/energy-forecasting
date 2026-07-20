@@ -1,8 +1,8 @@
 {
-  "generated_at": "2026-06-30T12:09:45Z",
+  "generated_at": "2026-07-14T10:02:18Z",
   "combos": {
     "wind_onshore/DE_50HZ": {
-      "run_id": "4221979093fc4b1091b4967f60762275",
+      "run_id": "ec1859114d894b61963b95ca8cf42fff",
       "model_type": "XGBRegressor",
       "model_params": {
         "n_estimators": 1137,
@@ -40,7 +40,7 @@
       }
     },
     "wind_onshore/DE_AMPRION": {
-      "run_id": "b4e7af94fee841bb891598188f966723",
+      "run_id": "c08b1d50f01f44d593828b33556a220d",
       "model_type": "LGBMRegressor",
       "model_params": {
         "n_estimators": 1184,
@@ -79,7 +79,7 @@
       }
     },
     "wind_onshore/DE_TENNET": {
-      "run_id": "f588978f230a4db499fe7b3d97a716d3",
+      "run_id": "bea7821a28874a829deb46bd6e17e088",
       "model_type": "LGBMRegressor",
       "model_params": {
         "n_estimators": 1156,
@@ -118,7 +118,7 @@
       }
     },
     "wind_onshore/DE_TRANSNETBW": {
-      "run_id": "0cc4d1fc8a5e43009a3e137f06fe0cda",
+      "run_id": "97784f0b3a5042d39f363859320a1375",
       "model_type": "XGBRegressor",
       "model_params": {
         "n_estimators": 1142,
@@ -156,46 +156,45 @@
       }
     },
     "wind_offshore/DE_50HZ": {
-      "run_id": "1caa4a30879e4ddfab848dd7dde15e6a",
-      "model_type": "LGBMRegressor",
+      "run_id": "e95ab2404f4d4a9688f313cddc7ccf81",
+      "model_type": "XGBRegressor",
       "model_params": {
-        "n_estimators": 1060,
-        "learning_rate": 0.006176558546871643,
-        "num_leaves": 35,
-        "max_depth": 9,
-        "min_child_samples": 60,
-        "subsample": 0.5886671627232419,
-        "colsample_bytree": 0.677997900189022,
-        "reg_alpha": 6.923095340791511,
-        "reg_lambda": 5.0542541179503955,
-        "min_split_gain": 0.3060257624112664,
-        "objective": "mae",
-        "metric": "mae"
+        "n_estimators": 1114,
+        "learning_rate": 0.010206400681470926,
+        "max_depth": 10,
+        "min_child_weight": 78,
+        "subsample": 0.7480936187025045,
+        "colsample_bytree": 0.723637769547577,
+        "reg_alpha": 7.788295778261138,
+        "reg_lambda": 3.5202717925425016,
+        "gamma": 0.39463285976897094,
+        "objective": "reg:absoluteerror",
+        "eval_metric": "mae"
       },
       "weather_config": {
-        "compute_air_density": false,
-        "compute_air_density_moist": true,
-        "encode_wind_direction": false,
-        "compute_wind_shear": false,
+        "compute_air_density": true,
+        "compute_air_density_moist": false,
+        "encode_wind_direction": true,
+        "compute_wind_shear": true,
         "compute_wind_ramp": true,
-        "gust_factor": false,
+        "gust_factor": true,
         "dew_point_temperature": false,
-        "vapor_pressure": true,
-        "lags_choice": "large",
+        "vapor_pressure": false,
+        "lags_choice": "small",
         "precip_lags_choice": "none",
-        "turbulence_window": 2,
+        "turbulence_window": 0,
         "drop_raw_main_features": true,
-        "drop_raw_wind_features": true,
-        "spatial_agg_method": "mean"
+        "drop_raw_wind_features": false,
+        "spatial_agg_method": "idw"
       },
       "dataset_params": {
         "log_target": true,
         "lags_target": null,
-        "scaler": "standard"
+        "scaler": "minmax"
       }
     },
     "wind_offshore/DE_TENNET": {
-      "run_id": "a3cb2d378f874e7ea1a3bbeff0b4df20",
+      "run_id": "4b985e301e3d47c99ae3ed4f82d82fb8",
       "model_type": "XGBRegressor",
       "model_params": {
         "n_estimators": 1112,
@@ -233,7 +232,7 @@
       }
     },
     "solar/DE_50HZ": {
-      "run_id": "06e737bdd4c54dff9763a180d6fa983b",
+      "run_id": "8ae341aeea674468a4763d127a18d11e",
       "model_type": "LGBMRegressor",
       "model_params": {
         "n_estimators": 1167,
@@ -275,7 +274,7 @@
       }
     },
     "solar/DE_AMPRION": {
-      "run_id": "4936cfe1ac0a42c19d31ed8c81ae424c",
+      "run_id": "c4e08a4ec9114cd48398f623d2d247ce",
       "model_type": "LGBMRegressor",
       "model_params": {
         "n_estimators": 1178,
@@ -317,7 +316,7 @@
       }
     },
     "solar/DE_TENNET": {
-      "run_id": "08bc4c2d75634d478eb80bd07f49c76f",
+      "run_id": "b6350daaa3a24444932976ee21e5cb3f",
       "model_type": "LGBMRegressor",
       "model_params": {
         "n_estimators": 1007,
@@ -359,7 +358,7 @@
       }
     },
     "solar/DE_TRANSNETBW": {
-      "run_id": "55c6a34864734b05b2d23b55e7cde806",
+      "run_id": "21c0cede877543ca89d0773db9365f74",
       "model_type": "LGBMRegressor",
       "model_params": {
         "n_estimators": 1173,
@@ -401,7 +400,7 @@
       }
     },
     "load/DE_50HZ": {
-      "run_id": "42e87c0ef2c14ea3bf79b1135f96f4ab",
+      "run_id": "e022a070802045659f44f1eac65bd6f3",
       "model_type": "XGBRegressor",
       "model_params": {
         "n_estimators": 1106,
@@ -449,7 +448,7 @@
       }
     },
     "load/DE_AMPRION": {
-      "run_id": "1397224f935c4a3aad76510ca31b0a98",
+      "run_id": "10e863d78f344e488642346cc847c7f8",
       "model_type": "LGBMRegressor",
       "model_params": {
         "n_estimators": 944,
@@ -498,7 +497,7 @@
       }
     },
     "load/DE_TENNET": {
-      "run_id": "15215a82b8fb4cd1be031b15b2a5db83",
+      "run_id": "14a0ce3939ae4a52805ad8a2ba9e7856",
       "model_type": "LGBMRegressor",
       "model_params": {
         "n_estimators": 1182,
@@ -547,46 +546,47 @@
       }
     },
     "load/DE_TRANSNETBW": {
-      "run_id": "ee134d3e078a47ec802f608198148b23",
-      "model_type": "XGBRegressor",
+      "run_id": "bbdd6c57b7224fd2828b6a4acb5484d9",
+      "model_type": "LGBMRegressor",
       "model_params": {
-        "n_estimators": 984,
-        "learning_rate": 0.025139822464987256,
-        "max_depth": 6,
-        "min_child_weight": 74,
-        "subsample": 0.6402086471891621,
-        "colsample_bytree": 0.5962119615328856,
-        "reg_alpha": 5.5797712180741605,
-        "reg_lambda": 3.9957004042559934,
-        "gamma": 0.23926359041401488,
-        "objective": "reg:absoluteerror",
-        "eval_metric": "mae"
+        "n_estimators": 1168,
+        "learning_rate": 0.02788999042839528,
+        "num_leaves": 27,
+        "max_depth": 7,
+        "min_child_samples": 40,
+        "subsample": 0.7630478343540806,
+        "colsample_bytree": 0.5393251128067506,
+        "reg_alpha": 8.483514415076218,
+        "reg_lambda": 4.278469781615885,
+        "min_split_gain": 0.449279589566094,
+        "objective": "mae",
+        "metric": "mae"
       },
       "weather_config": {
         "compute_heating_degree_hours": false,
-        "compute_cooling_degree_hours": false,
-        "hdh_threshold": 16.36558299090569,
-        "cdh_threshold": 20.715737253529507,
+        "compute_cooling_degree_hours": true,
+        "hdh_threshold": 15.316608778462138,
+        "cdh_threshold": 21.540779730605067,
         "compute_dew_point_spread": false,
         "compute_temp_gradient": false,
         "compute_wind_chill": true,
-        "compute_humidex": true,
+        "compute_humidex": false,
         "compute_wind_components": false,
-        "compute_wind_power_density": false,
+        "compute_wind_power_density": true,
         "compute_wind_speed_gradient": false,
-        "compute_pressure_trend": false,
-        "compute_air_density": false,
-        "compute_rain_indicator": true,
-        "compute_cloud_cover_fraction": false,
-        "compute_effective_solar": true,
+        "compute_pressure_trend": true,
+        "compute_air_density": true,
+        "compute_rain_indicator": false,
+        "compute_cloud_cover_fraction": true,
+        "compute_effective_solar": false,
         "temp_lags_option": "small",
         "precip_lags_option": "none",
-        "cloud_lags_option": "medium",
-        "rolling_temp_option": "none",
-        "drop_basic_meteo_features": true,
-        "drop_wind_meteo_features": false,
+        "cloud_lags_option": "none",
+        "rolling_temp_option": "short",
+        "drop_basic_meteo_features": false,
+        "drop_wind_meteo_features": true,
         "drop_rad_meteo_features": false,
-        "spatial_agg_method": "max"
+        "spatial_agg_method": "mean"
       },
       "dataset_params": {
         "log_target": false,
@@ -595,7 +595,7 @@
       }
     },
     "load/DE_CREOS": {
-      "run_id": "c396903a29f44dc58feb608f28962964",
+      "run_id": "4fe75fc27b944e8e983996062866747b",
       "model_type": "LGBMRegressor",
       "model_params": {
         "n_estimators": 1044,
@@ -644,7 +644,7 @@
       }
     },
     "gen_load_diff/DE_NATIONAL": {
-      "run_id": "f78b1089e2704026941a8283c0a383e0",
+      "run_id": "9348c1dbba5b49468bc454ba28369441",
       "model_type": "XGBRegressor",
       "model_params": {
         "n_estimators": 1142,

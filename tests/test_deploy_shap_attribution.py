@@ -4,10 +4,11 @@ from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
+from energy_forecasting.deploy.shap_attribution import categorize_feature, compute_price_shap
 from lightgbm import LGBMRegressor
 from sklearn.linear_model import Ridge
-
-from energy_forecasting.deploy.shap_attribution import categorize_feature, compute_price_shap
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import RobustScaler
 
 
 def test_categorize_feature_known_columns():
@@ -58,7 +59,9 @@ def test_compute_price_shap_reconstructs_ensemble_prediction():
         k_matrix[i, f] = 1.0
 
     ridge_folds = [
-        Ridge(alpha=0.01).fit(X_train[fold_of_row != f], y_train[fold_of_row != f])
+        Pipeline([("scaler", RobustScaler()), ("model", Ridge(alpha=0.01))]).fit(
+            X_train[fold_of_row != f], y_train[fold_of_row != f]
+        )
         for f in range(n_folds)
     ]
     lgbm_folds = [

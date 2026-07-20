@@ -756,7 +756,7 @@ The ~4.18 years of OOF predictions per (target, region) form the artifact Stage 
 #### 5c: Price Models (complete, 2026-06-30)
 
 **What was implemented:**
-- `modeling/price.py` — `run_price_pipeline` orchestrates feature prep → per-(model_type, feature_version) tuning → winner retrain with VALIDATION_CV_FOLDS → SLSQP ensemble bake-off → post-hoc conformal PI calibration → MLflow log + JSON config write. `precomputed_datasets` param lets experiments reuse existing fs_* parquets.
+- `modeling/price.py` — `run_price_pipeline` orchestrates feature prep → per-(model_type, feature_version) tuning → winner retrain with VALIDATION_CV_FOLDS → **EP-faithful ensemble construction** (category floor: best-MAE + best-RMSE per model family → up to 8 members, then inverse-MAE weights fit on the recent holdout) → post-hoc conformal PI calibration → MLflow log + JSON config write. `precomputed_datasets` param lets experiments reuse existing fs_* parquets. (The former SLSQP/stacker method bakeoff was reverted 2026-07-20 — see `docs/bug-fixes/ep_fidelity_reproduction_plan.md`; it survives only as `scripts/ensemble_method_comparison.py`.)
 - `modeling/tuning.py` — two-stage grid for tree models (stage 1: weight pinning across WEIGHT_HALF_LIVES; stage 2: hyperparam grid). Exhaustive grid for linear models (preprocessing × alpha). Optuna SQLite studies resume on restart. Per-(model_type, feature_version, stage) MLflow run under `price/model_training`.
 - `modeling/feature_selection.py` — `run_feature_selection`: correlation filter → SHAP importance → SHAP cutoff curve (coarse + fine grid around local minima) → RFECV narrowing → extra candidate logging. Each candidate logged as a `price/feature_selection` MLflow run. Curves saved to disk (`price_fs_shap_ranking.parquet`, `price_fs_shap_curve.parquet`, `price_fs_rfecv_curve.parquet`) and to MLflow (`meta_shap` run + `rfecv_optimum` artifact).
 - `config/search_spaces.py` — LGBM probe and grid with `num_leaves = 2^max_depth − 1` per config (capacity fix), `subsample_freq=1` (bagging fix). Linear grids for Ridge and Lasso.
@@ -765,24 +765,29 @@ The ~4.18 years of OOF predictions per (target, region) form the artifact Stage 
 
 **Key decisions resolved:**
 - LGBM root cause (2026-06-06): `num_leaves=31` cap (8× less capacity than XGB) + `objective="mae"` zero-hessian degradation. Fixed by scaling `num_leaves` to `2^max_depth - 1` and enabling `subsample_freq=1`. Objective kept at MAE for EP comparability; L2 objective sweep is a roadmap item.
-- Diversity candidates (LGBMQuantile, Huber): confirmed by SLSQP bake-off to earn zero ensemble weight. Removed from the pipeline after the experiment.
+- Diversity candidates (LGBMQuantile, Huber): earned zero ensemble weight in the method comparison. Removed from the pipeline after the experiment.
 - `max` feature set dropped — never earned ensemble weight.
 - Ensemble PI: post-hoc conformal calibration on holdout residuals (q fitted on holdout, not CV), matching EP's pattern. Base-model MAPIE PIs were uniformly under-covered (~70–90%); a single ensemble-level quantile restores target coverage.
 
-**Results — first clean run (2026-05-29, baseline):**
-- Holdout MAE **11.239**, RMSE 18.000, R²=0.846, PI coverage 90.05%, PI width 50.35
-- Tree models (XGB × 3, CatBoost × 2) held 91% of ensemble weight; LGBM ~zero (crippled).
+**Results — the "reproduce EP first" correction (2026-07-20):**
+The initial 5c runs (May–Jun 2026) reported holdout MAE in the low teens (~11), but
+that figure was **optimistic and did not survive scrutiny**: it combined residual
+`forecast_*`/`prog_*` leakage with a holdout-fit SLSQP/stacker bakeoff that overfit
+its own selection window and collapsed onto one or two members. Cross-checking
+against EP's continuously-running production blend — which posts live-forward MAE in
+the **16–18** band on the same market and period — showed the two disagreeing by ~5
+MAE, a clear signal the low number was not real. The ensemble was reworked to
+reproduce EP verbatim (category floor + inverse-MAE on the recent holdout, base
+models refit from fresh `merged`); the honest in-sample recent-holdout MAE now lands
+in EP's band.
 
-**Results — diversity experiment (2026-06-24, production config):**
-- Holdout MAE **11.148**, RMSE 18.094, R²=0.844, PI coverage 90.05%, PI width 48.89
-- `LGBMRegressor__fs_shap_top90`: **0.346** weight (largest single contributor — LGBM fix worked)
-- `XGBRegressor__fs_rfecv_optimum`: 0.197, `XGBRegressor__fs_shap_top90`: 0.188
-- `CatBoostRegressor__fs_rfecv_optimum`: 0.184, `Ridge__fs_shap_top247`: 0.084
-- LGBMQuantile and Huber: zero weight everywhere — confirmed non-contributors, removed.
+Per the "numbers live in regenerated artifacts, not prose" principle, no headline MAE
+is pinned here — the current value lives in `models/ensemble_config.json` (in-sample
+recent-holdout, EP's optimistic `blend_mae` convention) and the live-forward
+monitoring log, and is judged relative to EP's current live errors, not an absolute
+target. See `docs/bug-fixes/ep_fidelity_reproduction_plan.md`.
 
 **All review items closed:** #1–#8 (see `docs/stage5c_status_2026-06-06.md`).
-
-**Production config promoted:** `models/ensemble_config.json` is the 2026-06-24 diversity run (MAE 11.148). The baseline (11.239) is preserved as `models/ensemble_config_5c_diversity.json` for comparison.
 
 ---
 
@@ -912,11 +917,11 @@ In addition to per-stage unit tests (which are expected as part of each stage's 
 **What was implemented:**
 - `deploy/model_store.py` — MLflow → joblib export/load for all production models; `gen_load_config.json` and `ensemble_config.json` path constants; `production_model_names()` for weight-filtered name list
 - `deploy/gen_load_inference.py` — wave-by-wave TSO inference (wind/solar → load → gen_load_diff); `_build_temporal_and_lag_features` with ffill approximation for h>24 lags; `_build_exog_features` chains previous wave outputs via TSO column names; `forecast_with_lags` / `forecast_direct` dispatch on `lags_target` in config; `aggregate_national` sums TSOs to DE_NATIONAL; `update_historical_forecasts` appends to per-(target,region) parquets
-- `deploy/price_inference.py` — extends merged dataset to D+1, builds per-version feature matrices, loads non-zero-weight base models, applies SLSQP weights, adds symmetric conformal PI from `conformal_quantile`
+- `deploy/price_inference.py` — extends merged dataset to D+1, builds per-version feature matrices, loads non-zero-weight base models, applies the ensemble's inverse-MAE weights, adds symmetric conformal PI from `conformal_quantile`
 - `deploy/validation.py` — `ForecastValidationError`; validates price (24h, [-500,3000] EUR/MWh, no NaN), generation (168h, non-negative, solar night check), load (168h, [10000,120000] MW); `validate_outputs` collects all errors before raising
 - `deploy/inference.py` — thin orchestrator: optional data update → gen/load inference → price inference → validation (hard fail) → publish
 - `deploy/publish.py` — writes `deploy/data/price_forecast.json`, rolling 30-day `forecast_history.json`, per-(target,region) gen/load JSONs, `model_metadata.json`, per-day `errors/{date}.json` with MAE/RMSE vs SMARD actuals
-- `deploy/retrain.py` — price retrain (CI-safe, ~30-90 min): per-model refit → SLSQP reoptimise → degradation guard → config update + export; gen/load retrain (manual detached only, 8-12h)
+- `deploy/retrain.py` — price retrain (CI-safe, ~30-90 min): rebuild datasets from fresh `merged` → per-model refit from scratch on the rolling train split → EP inverse-MAE reweight on the recent holdout (`reweight` = steady-state members; `reselection` = re-run the category floor over all candidates) → degradation guard → config update + export; gen/load retrain (manual detached only, 8-12h)
 - `api/app.py`, `api/routes.py`, `api/dependencies.py` — stateless FastAPI (7 endpoints: /health, /forecast/price, /forecast/generation/{type}, /forecast/load, /forecast/history, /models, /models/performance); reads pre-computed JSON from `deploy/data/`; CORSMiddleware allow_origins=["*"]
 - `cli.py` — `deploy` sub-group: `forecast`, `export-models`, `gen-load-config`, `serve`, `retrain`; `_write_gen_load_config` hook added to training loop to write best-run metadata after each (target, region)
 - `.github/workflows/daily_forecast.yml` — 08:00 UTC cron; 3 jobs: collect-data → inference → GitHub Pages deploy; downloads models from Release at start
@@ -1095,3 +1100,50 @@ Stage 8 extensions are independent of each other and can be tackled in any order
 **CI runtime.** The combined pipeline (weather data collection + gen/load inference + price inference) must complete before the 12:00 CET auction. Weather collection is the bottleneck (~20 min). Mitigation: parallelise weather collection by asset type.
 
 **Model storage in releases.** GitHub has a 2GB per-release-asset limit. The full model set should be well under this, but verify. Also, release download adds latency to the daily workflow.
+
+---
+
+## Bug fixes
+
+Significant post-deployment bug fixes that span multiple files or trigger their own
+retrain/remediation work are documented in their own directories, indexed here.
+The cross-fix index is **[`docs/bug-fixes/README.md`](bug-fixes/README.md)**.
+
+### Forecast feature leakage (`docs/forecast_fix/`)
+
+The deployed price models consumed `prog_*` features derived from SMARD D+1
+`prognostizierte_*` columns, which are published ~16:00–18:00 UTC on delivery day D
+and are therefore unavailable at the 08:00 UTC inference time — a data-leakage bug
+that left the live model training on information it could never have in production.
+The fix replaces `prog_*` with source-neutral `forecast_*` columns built from our own
+gen/load forecast artifacts (waterfall: own forecasts → SMARD → actuals), with strict
+own-only coverage required for live D+1 inference.
+
+Full plans, review, and execution logs live in **`docs/forecast_fix/`** (start with
+its `README.md`). As of 2026-07-14 the leakage fix has landed and a price retrain has
+run, but shipping is blocked on a gen/load historical-forecast coverage hole
+(2026-04→06) that corrupted the retrain holdout; active work is in
+`docs/forecast_fix/forecast_fix_coverage_remediation_plan.md`.
+
+### Price ensemble construction (`docs/bug-fixes/ep_fidelity_reproduction_plan.md`)
+
+The forecast-fix retrain exposed a separate ensemble-construction bug: the
+weight-based ensemble methods were fitted on the same holdout window used to
+select the winner, giving sparse optimizers such as `slsqp_optimized` an
+in-sample advantage and allowing whole model families to collapse to near-zero
+weight (the production config had one LGBM member at 0.74 with XGB/CatBoost/Lasso
+at ~1e-16).
+
+The first attempt to fix this (`ensemble_construction_fix.md`) added a *fair
+OOF-fit / holdout-eval bakeoff* with category floors, minimum-weight variants, and
+a no-refit rule — but that was itself a divergence from EP, and it left production
+stuck on April-vintage models. It was **reverted 2026-07-20** in favour of
+reproducing EP verbatim (master_plan decision #6, "reproduce first"): a category
+floor (2 per model family) + inverse-MAE weights fit on the recent holdout, base
+models refit from fresh `merged` each retrain. The bakeoff code is retained only as
+a standalone diagnostic (`scripts/ensemble_method_comparison.py`); conformal PI is
+the one sanctioned deviation from EP. Bootstrapped into production 2026-07-20.
+
+Current plan: **[`docs/bug-fixes/ep_fidelity_reproduction_plan.md`](bug-fixes/ep_fidelity_reproduction_plan.md)**
+(supersedes `ensemble_construction_fix.md`). Sanctioned deviations from EP are
+tracked in **[`docs/bug-fixes/README.md`](bug-fixes/README.md)**.

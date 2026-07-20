@@ -4,7 +4,7 @@ Orchestrates the chain:
 
     feature dataset prep  →  feature_selection (optional)  →  tuning
                                                           ↓
-                  ensemble bake-off  ←  final retrain with OOF capture
+                  ensemble selection  ←  final retrain with OOF capture
 
 The output is a JSON ensemble config under
 ``models/ensemble_config.json`` that records every base model's run_id,
@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Any
 
 import mlflow
-import numpy as np
 import pandas as pd
 from loguru import logger
 
@@ -32,18 +31,21 @@ from energy_forecasting.config.features import (
 from energy_forecasting.config.modeling import (
     FEATURE_CONTRACT,
     HOLDOUT_DAYS,
+    PRICE_HOLDOUT_MIN_OWN_FORECAST_FRACTION,
     SEARCH_CV_FOLDS,
     VALIDATION_CV_FOLDS,
 )
 from energy_forecasting.data.io import load_parquet
+from energy_forecasting.features.forecast_coverage import assert_price_holdout_forecast_coverage
 from energy_forecasting.features.forecast_inputs import build_forecast_columns
 from energy_forecasting.features.validation import validate_price_feature_list
 from energy_forecasting.modeling.cv import TimeSeriesSplitter
 from energy_forecasting.modeling.datasets import find_dataset, prepare_dataset
 from energy_forecasting.modeling.ensemble import (
-    compare_ensemble_methods,
+    build_production_ensemble,
     ensemble_config_dict,
-    select_best_ensemble,
+    fetch_prediction_artifacts,
+    stack_model_predictions,
 )
 from energy_forecasting.modeling.mlflow_utils import TrackedRun, ensure_mlflow_tracking
 from energy_forecasting.modeling.training import train_model
@@ -114,6 +116,30 @@ def prepare_price_dataset(
         logger.info(f"Dropped {dropped} warm-up rows with NaN features ({len(cleaned)} remain)")
         cleaned.to_parquet(path)
     return path
+
+
+
+
+def _assert_dataset_holdout_forecast_coverage(
+    dataset_path: Path,
+    *,
+    merged_path: Path | None = None,
+) -> dict[str, Any]:
+    """Guard against blending/calibrating on a fallback-sourced holdout."""
+    merged_path = merged_path or Path("data/processed/merged.parquet")
+    raw = load_parquet(merged_path)
+    dataset_index = pd.read_parquet(dataset_path).index
+    report = assert_price_holdout_forecast_coverage(
+        pd.DatetimeIndex(dataset_index),
+        raw,
+        min_own_fraction=PRICE_HOLDOUT_MIN_OWN_FORECAST_FRACTION,
+        context=f"{dataset_path.name} price holdout",
+    )
+    logger.info(
+        f"Forecast source coverage for {dataset_path.name} holdout: "
+        f"own={report['own_fraction'] * 100:.2f}% counts={report['counts']}"
+    )
+    return report
 
 
 def prepare_subset_dataset(parent_path: Path, columns: list[str], name: str) -> Path:
@@ -198,43 +224,17 @@ def _train_winner(
 
 def _fetch_predictions(run_id: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Download OOF + holdout prediction parquets for one run."""
-    ensure_mlflow_tracking()
-    client = mlflow.MlflowClient()
-    artifact_dir = Path(client.download_artifacts(run_id, "predictions"))
-    oof = pd.read_parquet(artifact_dir / "oof_predictions.parquet")
-    holdout = pd.read_parquet(artifact_dir / "holdout_predictions.parquet")
-    return oof, holdout
+    return fetch_prediction_artifacts(run_id)
 
 
 def _stack_predictions(
     model_runs: list[_ModelRun],
 ) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
-    """Assemble (preds_oof, y_oof, preds_holdout, y_holdout)."""
-    oof_frames: dict[str, pd.DataFrame] = {}
-    holdout_frames: dict[str, pd.DataFrame] = {}
-    for mr in model_runs:
-        oof, hold = _fetch_predictions(mr.run_id)
-        oof_frames[mr.name] = oof
-        holdout_frames[mr.name] = hold
-
-    names = list(oof_frames)
-    common_oof = oof_frames[names[0]].index
-    common_hold = holdout_frames[names[0]].index
-    for n in names[1:]:
-        common_oof = common_oof.intersection(oof_frames[n].index)
-        common_hold = common_hold.intersection(holdout_frames[n].index)
-
-    preds_oof = pd.DataFrame(
-        {n: oof_frames[n].loc[common_oof, "y_pred"] for n in names},
-        index=common_oof,
+    """Assemble validated (preds_oof, y_oof, preds_holdout, y_holdout)."""
+    preds_oof, y_oof, preds_hold, y_hold, _ = stack_model_predictions(
+        model_runs,
+        prediction_loader=_fetch_predictions,
     )
-    y_oof = oof_frames[names[0]].loc[common_oof, "y_true"]
-
-    preds_hold = pd.DataFrame(
-        {n: holdout_frames[n].loc[common_hold, "y_pred"] for n in names},
-        index=common_hold,
-    )
-    y_hold = holdout_frames[names[0]].loc[common_hold, "y_true"]
     return preds_oof, y_oof, preds_hold, y_hold
 
 
@@ -360,6 +360,13 @@ def run_price_pipeline(
             tree_fv_set.add(fv)
             linear_fv_set.add(fv)
 
+    # Guard before tuning, blending, and conformal calibration. This uses the
+    # exact final dataset index and the same holdout split train_model() will
+    # later carve, so a coverage hole cannot silently contaminate weights or PI.
+    for fv, ds_path in sorted(datasets.items()):
+        logger.info(f"=== Forecast source guard: feature_version={fv} ===")
+        _assert_dataset_holdout_forecast_coverage(ds_path)
+
     # 2. Tuning per (model_type, feature_version). Wrap each
     # (model_type, feature_version) in a try/except so one slow / fragile
     # combination doesn't abort the whole overnight run.
@@ -403,8 +410,8 @@ def run_price_pipeline(
     # 3a. Prune dominated configs before the expensive retrain step.
     # Within each model type, keep only feature versions whose cv_mae is
     # within 20% of that model type's best cv_mae. This avoids spending
-    # VALIDATION_CV_FOLDS × full-dataset training time on configs the
-    # SLSQP would zero-weight anyway, without touching cross-family diversity
+    # VALIDATION_CV_FOLDS × full-dataset training time on configs unlikely to survive
+    # final ensemble selection, without touching cross-family diversity
     # (linear vs tree families are never compared against each other here).
     from collections import defaultdict
 
@@ -454,41 +461,27 @@ def run_price_pipeline(
     if not model_runs:
         raise RuntimeError("All retrain runs failed — no models to ensemble.")
 
-    # 4. Assemble predictions + bake off ensembles.
-    preds_oof, y_oof, preds_hold, y_hold = _stack_predictions(model_runs)
-    comparison = compare_ensemble_methods(preds_oof, y_oof, preds_hold, y_hold)
-    method, ensemble, metrics = select_best_ensemble(comparison)
-
-    # Post-hoc conformal calibration on the chosen ensemble (§5c.4 step 4).
-    # Calibrate on holdout residuals — matches EP's pattern of fitting both
-    # weights and intervals on the holdout window. The base models' MAPIE
-    # PIs are uniformly under-covered at ~70-90% on this dataset; the
-    # ensemble's post-hoc quantile is the single number that gets coverage
-    # back on target.
-    from energy_forecasting.modeling.intervals import (
-        calibrate_ensemble_intervals,
-        predict_ensemble_intervals,
+    # 4. Assemble validated predictions, select category-floored candidates,
+    # fit EP-style inverse-MAE weights on the recent holdout, and calibrate
+    # conformal intervals on those in-sample holdout residuals.
+    production = build_production_ensemble(
+        model_runs,
+        prediction_loader=_fetch_predictions,
+        strict_categories=True,
     )
-
-    ensemble_holdout_pred = ensemble.predict(preds_hold)
-    conformal_quantile = calibrate_ensemble_intervals(y_hold, ensemble_holdout_pred)
-    pi_lower, pi_upper = predict_ensemble_intervals(
-        ensemble_holdout_pred,
-        conformal_quantile,
-    )
-    coverage = float(np.mean((y_hold.to_numpy() >= pi_lower) & (y_hold.to_numpy() <= pi_upper)))
-    pi_width = float(np.mean(pi_upper - pi_lower))
-    metrics["conformal_quantile"] = float(conformal_quantile)
-    metrics["pi_coverage"] = coverage
-    metrics["pi_width"] = pi_width
+    method = production.method
+    ensemble = production.ensemble
+    metrics = production.metrics
 
     logger.info(
         f"Ensemble winner: {method} (holdout MAE={metrics['mae']:.3f}, "
         f"RMSE={metrics['rmse']:.3f}, R²={metrics['r2']:.3f}, "
-        f"PI coverage={coverage:.2%} @ q={conformal_quantile:.3f})"
+        f"PI coverage={metrics['pi_coverage']:.2%} "
+        f"@ q={metrics['conformal_quantile']:.3f})"
     )
 
-    # 5. Log the winning ensemble + comparison to MLflow.
+    # 5. Log the production ensemble to MLflow. Method bakeoff comparison is
+    # diagnostic-only and lives in scripts/ensemble_method_comparison.py.
     base_runs = {
         mr.name: {
             "run_id": mr.run_id,
@@ -499,12 +492,15 @@ def run_price_pipeline(
         for mr in model_runs
     }
     config_dict = ensemble_config_dict(ensemble, base_runs=base_runs, metrics=metrics)
+    numeric_metrics = {
+        k: v for k, v in metrics.items() if isinstance(v, (int, float)) and not isinstance(v, bool)
+    }
 
     with TrackedRun(
         "price_production",
-        dataset_name="ensemble_bakeoff",
+        dataset_name="ensemble_production",
         stage="production",
-        ensemble_step="bakeoff",
+        ensemble_step="ensemble_production",
         feature_version="+".join(feature_versions)
         if feature_versions
         else "+".join(sorted(datasets)),
@@ -517,12 +513,13 @@ def run_price_pipeline(
     ):
         mlflow.log_param("ensemble_method", method)
         mlflow.log_param("n_base_models", len(model_runs))
-        mlflow.log_metrics(metrics)
+        mlflow.log_metrics(numeric_metrics)
         mlflow.log_dict(config_dict, "ensemble_config.json")
         mlflow.log_dict(
-            comparison.drop(columns=[]).to_dict(orient="records"),
-            "ensemble_comparison.json",
+            production.candidate_metrics.to_dict(orient="records"),
+            "ensemble_candidate_metrics.json",
         )
+        mlflow.log_dict(production.alignment_metadata, "ensemble_alignment.json")
 
     # 6. Persist the config alongside the repo's other model artifacts.
     output_config.parent.mkdir(parents=True, exist_ok=True)
@@ -532,8 +529,8 @@ def run_price_pipeline(
 
     return {
         "winners": winners,
-        "model_runs": model_runs,
-        "comparison": comparison,
+        "model_runs": production.selected_model_runs,
+        "comparison": production.comparison,
         "ensemble_method": method,
         "metrics": metrics,
         "config_path": output_config,

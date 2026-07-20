@@ -77,7 +77,7 @@ src/
 | Main training function | `src/modeling/training.py` — `train_and_log()` (~line 41) |
 | Sample weighting (exponential decay) | `src/modeling/training.py` — `compute_sample_weights()` (~line 391) |
 | Time-series CV splitter | `src/modeling/training.py` — `TimeSeriesSplitter` class (~line 431) |
-| Blend ensemble (full pipeline) | `src/modeling/blend.py` — select_candidates, validate_candidates, select_final_models, train_and_blend, retrain_blend |
+| Blend ensemble (full pipeline) | `src/modeling/blend.py` — historical EP reference for `select_final_models`, inverse-MAE weighting, train_and_blend, retrain_blend; merged repo now uses fair OOF-fit / holdout-eval construction in `energy_forecasting/modeling/ensemble.py` |
 | Blend config structure | `models/production/blend_config.json` |
 | Committed hyperparameters | `models/production/blend_hyperparams.json` |
 | Retrain from committed params | `src/modeling/train_final.py` |
