@@ -162,6 +162,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Save deploy state (rolling history + gen/load forecasts)
+        # always() so a downstream (e.g. price) failure can never again discard
+        # the freshly-appended gen/load historical_forecasts and freeze the frontier.
+        if: always()
         uses: actions/cache/save@v4
         with:
           path: |
