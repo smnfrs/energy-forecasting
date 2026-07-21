@@ -178,3 +178,51 @@ def test_rebuild_price_dataset_from_merged_uses_fresh_rows(tmp_path, monkeypatch
     assert out == tmp_path / "price_fv.parquet"
     assert list(saved.columns) == ["x", "target_price__target"]
     assert list(saved.index) == [idx[0], idx[1], idx[4]]
+
+
+def test_run_price_retrain_aborts_on_bad_holdout_coverage(tmp_path, monkeypatch):
+    """Finding A: retrain must fail (before rebuilding the ensemble) if the
+    recent holdout is not >=95% own-sourced — the deploy-skew guard."""
+    import pandas as pd
+    import pytest
+
+    import energy_forecasting.deploy.retrain as retrain
+    import energy_forecasting.features.forecast_coverage as fc
+
+    idx = pd.date_range("2026-01-01", periods=10, freq="D", tz="UTC")
+    ds_path = tmp_path / "price_fv.parquet"
+    pd.DataFrame(
+        {"x": range(10), "target_price__target": range(10)}, index=idx
+    ).to_parquet(ds_path)
+
+    merged_dir = tmp_path / "processed"
+    merged_dir.mkdir()
+    pd.DataFrame({"a": range(10)}, index=idx).to_parquet(merged_dir / "merged.parquet")
+    monkeypatch.setattr(retrain, "PROCESSED_DATA_DIR", merged_dir)
+
+    monkeypatch.setattr(retrain, "load_ensemble_config", _config)
+    monkeypatch.setattr(retrain, "production_model_names", lambda cfg: ["m0", "m1"])
+
+    def fake_retrain_one(entry, *, dataset_cache=None, selection_step="steady_retrain"):
+        dataset_cache[entry["feature_version"]] = ds_path
+        return "new_" + entry["name"]
+
+    monkeypatch.setattr(retrain, "_retrain_one_price_model", fake_retrain_one)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("own_fraction=83.40% < 95.00%")
+
+    monkeypatch.setattr(fc, "assert_price_holdout_forecast_coverage", boom)
+
+    ensemble_called = {"hit": False}
+
+    def fake_ensemble(*args, **kwargs):
+        ensemble_called["hit"] = True
+        return {}, 1.0
+
+    monkeypatch.setattr(retrain, "_build_retrain_ensemble", fake_ensemble)
+
+    with pytest.raises(RuntimeError, match="own_fraction"):
+        retrain.run_price_retrain(mode="reweight")
+
+    assert ensemble_called["hit"] is False, "coverage guard must run before ensemble build"

@@ -243,6 +243,33 @@ def run_price_retrain(
     if not new_run_ids:
         raise RuntimeError("All price model retrains failed")
 
+    # Finding A: the retrain refits inverse-MAE weights (and, downstream,
+    # conformal PIs) on the recent holdout. If that holdout is not >=95%
+    # own-sourced — e.g. a frozen gen/load frontier leaving forecast_* columns
+    # backfilled from SMARD/actuals — the shipped config is calibrated on the
+    # wrong inputs. That is the exact deploy-skew failure mode, so assert loud
+    # here just as the train path (modeling/price.py) and daily inference do.
+    import pandas as pd
+
+    from energy_forecasting.features.forecast_coverage import (
+        assert_price_holdout_forecast_coverage,
+    )
+
+    sample_ds_path = next(iter(dataset_cache.values()))
+    sample_index = pd.read_parquet(sample_ds_path, columns=[]).index
+    merged = pd.read_parquet(PROCESSED_DATA_DIR / "merged.parquet")
+    coverage = assert_price_holdout_forecast_coverage(
+        sample_index,
+        merged,
+        holdout_days=HOLDOUT_DAYS,
+        context="price retrain holdout",
+    )
+    logger.info(
+        f"Price retrain holdout coverage OK: own_fraction="
+        f"{coverage['own_fraction']:.2%} over "
+        f"{coverage['holdout_start']} -> {coverage['holdout_end']}"
+    )
+
     new_config, new_mae = _build_retrain_ensemble(old_config, new_run_ids, mode=mode)
 
     if old_mae > 0:
