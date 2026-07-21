@@ -112,6 +112,7 @@ jobs:
           path: data/raw/weather/
 
       - name: Restore deploy state (rolling history + gen/load forecasts)
+        id: cache-deploy-state
         uses: actions/cache/restore@v4
         with:
           path: |
@@ -131,7 +132,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Restore gen/load national historical forecasts from Release
+      # Cold-start only. On a warm cache the deploy-state restore already holds
+      # the daily-advanced national historical_forecasts; unconditionally
+      # extracting the (never-daily-refreshed) Release tarball here would
+      # overwrite them and regress the frontier every run. cache-matched-key is
+      # empty only when no cache (exact or restore-key prefix) was found — the
+      # unique per-run primary key means cache-hit is always false on a warm
+      # restore-key fallback, so it must not be used for this guard.
+      - name: Restore gen/load national historical forecasts from Release (cache miss only)
+        if: steps.cache-deploy-state.outputs.cache-matched-key == ''
         run: |
           gh release download v1.0.0 --repo $REPO --pattern 'gen_load_hf.tar.gz' --dir /tmp/ --clobber 2>/dev/null \
             && tar -xzf /tmp/gen_load_hf.tar.gz \
