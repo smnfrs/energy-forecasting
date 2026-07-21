@@ -1,7 +1,7 @@
 """Feature engineering constants and feature list definitions.
 
 All feature lists use SHORT_NAMES (from config/columns.py) exclusively.
-Feature strings follow the suffix DSL grammar (see docs/stage4_feature_engineering.md §4.3).
+Feature strings follow the suffix DSL grammar (see dev-notes/stage4_feature_engineering.md §4.3).
 """
 
 from datetime import date

@@ -106,7 +106,7 @@ def suggest_dataset_params(trial, model_type: str | None = None) -> dict:
 # max_depth=8) and CatBoost (symmetric, 256 leaves at depth=8). We let
 # max_depth be the limiter (num_leaves set to the full 2^depth-1) and enable
 # bagging_freq so `subsample` is not a silent no-op. Objective stays MAE for
-# EP comparability — see docs/stage5c_status_2026-06-06.md (testing L2 across
+# EP comparability — see dev-notes/stage5c_status_2026-06-06.md (testing L2 across
 # all tree families is a roadmap item).
 PRICE_TREE_WEIGHT_PROBE = {
     "LGBMRegressor": {

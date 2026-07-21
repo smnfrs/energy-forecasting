@@ -22,7 +22,7 @@ from energy_forecasting.features.forecast_inputs import (
 from energy_forecasting.modeling.cv import carve_holdout
 from energy_forecasting.modeling.datasets import DATASET_DIR
 
-OUT_DIR = Path("docs/archive/price_pre_forecast_contract")
+OUT_DIR = Path("dev-notes/archive/price_pre_forecast_contract")
 BANNED_TOKENS = ("prog_", "pct_prog_", "prognostiziert")
 
 

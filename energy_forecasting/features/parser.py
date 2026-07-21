@@ -1,7 +1,7 @@
 """Suffix DSL parser for feature engineering.
 
 Parses feature strings like ``price_d7_d1_std`` or ``gen_wind_on_ewma_24_d1_h10``
-into structured ``FeatureSpec`` dataclasses. See docs/stage4_feature_engineering.md
+into structured ``FeatureSpec`` dataclasses. See dev-notes/stage4_feature_engineering.md
 section 4.3 for the full grammar specification.
 
 Grammar (informal BNF)::

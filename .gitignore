@@ -29,6 +29,7 @@ Thumbs.db
 
 # Jupyter
 .ipynb_checkpoints/
+/notebooks/
 
 # Deploy data (generated, not source)
 deploy/data/

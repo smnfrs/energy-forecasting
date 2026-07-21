@@ -141,7 +141,7 @@ def main() -> None:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("docs/forecast_fix/forecast_fix_price_validation_20260715.json"),
+        default=Path("dev-notes/forecast_fix/forecast_fix_price_validation_20260715.json"),
     )
     args = parser.parse_args()
 

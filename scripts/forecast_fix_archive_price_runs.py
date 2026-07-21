@@ -1,6 +1,6 @@
 """Preserve and archive pre-forecast-contract price MLflow runs.
 
-This is the Phase 2a helper for docs/forecast_fix/forecast_fix_retrain_plan.md. It exports
+This is the Phase 2a helper for dev-notes/forecast_fix/forecast_fix_retrain_plan.md. It exports
 small, reviewable summaries before optionally tagging the old price runs as
 archived/pre-contract. It intentionally does not delete artifacts.
 """
@@ -26,7 +26,7 @@ PRICE_EXPERIMENTS = [
 ]
 ARCHIVE_REASON = "pre-forecast-contract; leaky/non-comparable"
 PRE_CONTRACT = "prog_leaky"
-DEFAULT_OUT = Path("docs/archive/price_pre_forecast_contract")
+DEFAULT_OUT = Path("dev-notes/archive/price_pre_forecast_contract")
 
 
 def _now() -> str:
