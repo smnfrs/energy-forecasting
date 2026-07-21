@@ -724,6 +724,16 @@ def _export_historical_forecasts(
     combined = combined[["y_true", "y_pred", "y_lower", "y_upper"]]
 
     out_path = out_dir / f"{target}_{region}.parquet"
+    # Merge-preserve: the OOF+holdout series is a fixed-count sliding window
+    # (GEN_LOAD_HISTORICAL_FOLDS weekly folds), so a fresh run covers a *later*
+    # span than a prior one. Union with the existing file so earlier
+    # already-generated forecasts — now outside the window — are kept rather
+    # than silently dropped back to a SMARD fallback. Fresh rows win on overlap
+    # (keep="last" with the new frame concatenated after the existing one).
+    if out_path.exists():
+        existing = pd.read_parquet(out_path)
+        combined = pd.concat([existing, combined], axis=0)
+        combined = combined[~combined.index.duplicated(keep="last")].sort_index()
     combined.to_parquet(out_path)
     logger.info(
         f"Saved historical_forecasts/{target}_{region}.parquet: "
@@ -739,10 +749,10 @@ def _aggregate_national_historical_forecasts(
 
     For each per-TSO target (wind_onshore, wind_offshore, solar, load),
     sums y_pred (and y_true where available) across the regions present
-    in this run. Saves to
+    in this run, then merge-preserves into
     ``data/processed/historical_forecasts/{target}_DE_NATIONAL.parquet``
-    if it does not already exist (gen_load_diff is national directly and
-    is left untouched).
+    (earlier rows outside the current window are kept; gen_load_diff is
+    national directly and is left untouched here).
     """
     import pandas as pd
 
@@ -780,10 +790,18 @@ def _aggregate_national_historical_forecasts(
         agg = sum(df.reindex(common_idx) for df in frames)
         agg = agg[["y_true", "y_pred", "y_lower", "y_upper"]]
         nat_path = out_dir / f"{t}_DE_NATIONAL.parquet"
+        # Merge-preserve, mirroring _export_historical_forecasts: keep earlier
+        # national rows outside the current regional window; fresh sum wins on
+        # overlap.
+        if nat_path.exists():
+            existing = pd.read_parquet(nat_path)
+            agg = pd.concat([existing, agg], axis=0)
+            agg = agg[~agg.index.duplicated(keep="last")].sort_index()
         agg.to_parquet(nat_path)
         logger.info(
             f"Saved historical_forecasts/{t}_DE_NATIONAL.parquet (sum of "
-            f"{len(frames)} regions): {agg.shape[0]} rows"
+            f"{len(frames)} regions): {agg.shape[0]} rows, span "
+            f"{agg.index[0]} → {agg.index[-1]}"
         )
 
 
