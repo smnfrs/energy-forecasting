@@ -5,14 +5,71 @@ on:
     # 07:39 UTC = 08:39 CET / 09:39 CEST; offset from the top of the hour to reduce GitHub scheduler contention.
     - cron: "39 7 * * *"
   workflow_dispatch:
+    inputs:
+      wait_until_berlin_0900:
+        description: "Wait until 09:00 Europe/Berlin before collecting data"
+        required: false
+        type: boolean
+        default: false
 
 env:
   REPO: smnfrs/energy-forecasting
 
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      should_run: ${{ steps.decide.outputs.should_run }}
+    steps:
+      - name: Decide whether scheduled backup should run
+        id: decide
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          today_utc="$(date -u +%F)"
+          matching_runs="$(gh run list \
+            --repo "$REPO" \
+            --workflow daily_forecast.yml \
+            --limit 30 \
+            --json databaseId,createdAt,status,conclusion,url \
+            --jq ".[] | select(.databaseId != ${GITHUB_RUN_ID}) | select(.createdAt | startswith(\"${today_utc}\")) | select((.status == \"queued\") or (.status == \"in_progress\") or (.status == \"waiting\") or (.status == \"requested\") or (.status == \"pending\") or (.conclusion == \"success\")) | [.databaseId, .status, (.conclusion // \"\"), .url] | @tsv")"
+
+          if [ -n "$matching_runs" ]; then
+            echo "Existing daily forecast run found; scheduled backup will no-op:"
+            echo "$matching_runs"
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "No active or successful daily forecast run found today; scheduled backup will run"
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          fi
+
   collect-data:
+    needs: preflight
+    if: needs.preflight.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     steps:
+      - name: Wait until 09:00 Europe/Berlin
+        if: github.event_name == 'schedule' || github.event.inputs.wait_until_berlin_0900 == 'true'
+        run: |
+          now_epoch="$(date +%s)"
+          berlin_today="$(TZ=Europe/Berlin date +%F)"
+          target_epoch="$(TZ=Europe/Berlin date -d "${berlin_today} 09:00:00" +%s)"
+
+          if [ "$now_epoch" -lt "$target_epoch" ]; then
+            wait_seconds=$((target_epoch - now_epoch))
+            echo "Waiting ${wait_seconds}s until 09:00 Europe/Berlin"
+            sleep "$wait_seconds"
+          else
+            echo "Already past 09:00 Europe/Berlin; continuing"
+          fi
+
       - uses: actions/checkout@v4
 
       - name: Set up conda
