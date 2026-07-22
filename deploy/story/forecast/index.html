@@ -8,7 +8,6 @@
 <link rel="stylesheet" href="../story.css">
 <link rel="stylesheet" href="forecast-story.css">
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/scrollama@3.2.0/build/scrollama.min.js"></script>
 </head>
 <body>
 
@@ -23,161 +22,134 @@
   <a href="../index.html" class="dash-link">The history &rarr;</a>
 </nav>
 
-<section class="hero chapter" id="hook" data-chapter="hook">
-  <p class="kicker">Tomorrow's forecast, explained</p>
-  <h1>German power prices have grown far more volatile &mdash; and good forecasts are how the grid keeps up.</h1>
-  <p class="stat-line">
-    German energy generation needs to adapt for the 21st century, but renewables create
-    challenges. The increasing proportion of renewables in the energy mix, together with more
-    volatile commodity prices, has caused the volatility of electricity prices to explode. To
-    cope with this volatility, we need a flexible energy system, and that flexibility requires
-    high-quality forecasts. This page walks through the last 12 months of data, then explains
-    what the model is forecasting for tomorrow and why.
-  </p>
-  <p class="scroll-hint">Scroll to begin &darr;</p>
-</section>
+<main class="deck">
 
-<section class="chapter" id="yearly-gen-load" data-chapter="yearly-gen-load">
-  <div class="chapter-head">
-    <p class="chapter-kicker">The last 12 months</p>
-    <h2>Generation and load</h2>
-  </div>
-  <div class="scroll-wrap">
-    <div class="chapter-copy" data-scene="yearly-gen-load">
-      <div class="narrative-box" id="narrative-gen-load-yearly">Loading summary&hellip;</div>
-      <div class="beats">
-        <div class="beat" data-step="0">Over the last 12 months, wind and solar together supplied
-          <strong><span data-fill="renew">&hellip;</span></strong> of Germany's electricity.</div>
-        <div class="beat" data-step="1">And the mix is shifting fast &mdash; against the 12 months before,
-          <strong><span data-fill="shift">&hellip;</span></strong>.</div>
-        <div class="beat" data-step="2">Demand, by contrast, barely moves. Total load stays in a narrow
-          band all year, so it's the swinging supply that sets the tone.</div>
-      </div>
-    </div>
-    <div class="chapter-sticky">
-      <div class="panel">
-        <h2>Generation mix &mdash; the last 12 months</h2>
-        <p class="sub">Stacked generation by fuel group, weekly mean (MWh/day).</p>
-        <div id="chart-yearly-gen-load" class="chart" style="height:420px"></div>
-        <button class="table-toggle" data-table-for="chart-yearly-gen-load">View data as table</button>
-        <div class="data-table" id="table-chart-yearly-gen-load"></div>
-      </div>
-    </div>
-  </div>
-</section>
+  <section class="hero chapter slide" id="hook" data-chapter="hook">
+    <p class="kicker">Tomorrow's forecast, explained</p>
+    <h1>German power prices have grown far more volatile &mdash; and good forecasts are how the grid keeps up.</h1>
+    <p class="stat-line">
+      German energy generation needs to adapt for the 21st century, but renewables create
+      challenges. The increasing proportion of renewables in the energy mix, together with more
+      volatile commodity prices, has caused the volatility of electricity prices to explode. To
+      cope with this volatility, we need a flexible energy system, and that flexibility requires
+      high-quality forecasts. This page walks through the last 12 months of data, then explains
+      what the model is forecasting for tomorrow and why.
+    </p>
+    <p class="scroll-hint">Use the arrows below &mdash; or your &larr; &rarr; keys &mdash; to move through the story.</p>
+  </section>
 
-<section class="chapter" id="yearly-price" data-chapter="yearly-price">
-  <div class="chapter-head">
-    <p class="chapter-kicker">The last 12 months</p>
-    <h2>Prices</h2>
-  </div>
-  <div class="scroll-wrap">
-    <div class="chapter-copy" data-scene="yearly-price">
-      <div class="narrative-box" id="narrative-price-yearly">Loading summary&hellip;</div>
-      <div class="beats">
-        <div class="beat" data-step="0">Day-ahead power averaged
-          <strong><span data-fill="mean">&hellip;</span></strong> over the last 12 months.</div>
-        <div class="beat" data-step="1">But the average hides the real story &mdash; the swings. Each day's
-          low-to-high range is often enormous.</div>
-        <div class="beat" data-step="2">Prices even fell below zero in
-          <strong><span data-fill="neg">&hellip;</span></strong> &mdash; moments with more supply than the grid
-          could use.</div>
+  <section class="chapter slide" id="yearly-gen-load" data-chapter="yearly-gen-load">
+    <div class="chapter-head">
+      <p class="chapter-kicker">The last 12 months</p>
+      <h2>Generation and load</h2>
+    </div>
+    <div class="slide-body">
+      <div class="chart-col">
+        <div class="panel">
+          <h2>Generation mix &mdash; the last 12 months</h2>
+          <p class="sub">Stacked generation by fuel group, weekly mean (MWh/day); total load overlaid.</p>
+          <div id="chart-yearly-gen-load" class="chart" style="height:440px"></div>
+          <button class="table-toggle" data-table-for="chart-yearly-gen-load">View data as table</button>
+          <div class="data-table" id="table-chart-yearly-gen-load"></div>
+        </div>
+      </div>
+      <div class="caption-col">
+        <div class="narrative-box" id="narrative-gen-load-yearly">Loading summary&hellip;</div>
       </div>
     </div>
-    <div class="chapter-sticky">
-      <div class="panel">
-        <h2>DE-LU price &mdash; the last 12 months</h2>
-        <p class="sub">Line: daily mean. Band: daily low to high (EUR/MWh).</p>
-        <div id="chart-yearly-price" class="chart" style="height:340px"></div>
-      </div>
-    </div>
-  </div>
-</section>
+  </section>
 
-<section class="chapter" id="forecast-gen-load" data-chapter="forecast-gen-load">
-  <div class="chapter-head">
-    <p class="chapter-kicker">Tomorrow &mdash; <span class="delivery-date">&hellip;</span></p>
-    <h2>Generation and load forecast</h2>
-  </div>
-  <div class="scroll-wrap">
-    <div class="chapter-copy" data-scene="forecast-gen-load">
-      <div class="narrative-box" id="narrative-gen-load-forecast">Loading summary&hellip;</div>
-      <div class="beats">
-        <div class="beat" data-step="0">Solar collapses to zero every night and peaks at midday. The
-          forecast has to nail that shape every single day.</div>
-        <div class="beat" data-step="1">For tomorrow, <strong><span data-fill="standout">&hellip;</span></strong>.</div>
+  <section class="chapter slide" id="yearly-price" data-chapter="yearly-price">
+    <div class="chapter-head">
+      <p class="chapter-kicker">The last 12 months</p>
+      <h2>Prices</h2>
+    </div>
+    <div class="slide-body">
+      <div class="chart-col">
+        <div class="panel">
+          <h2>DE-LU price &mdash; the last 12 months</h2>
+          <p class="sub">Line: daily mean. Band: daily low to high (EUR/MWh).</p>
+          <div id="chart-yearly-price" class="chart" style="height:440px"></div>
+        </div>
+      </div>
+      <div class="caption-col">
+        <div class="narrative-box" id="narrative-price-yearly">Loading summary&hellip;</div>
       </div>
     </div>
-    <div class="chapter-sticky">
-      <div class="panel">
-        <h2>Wind, solar &amp; load &mdash; recent actual vs. tomorrow's forecast</h2>
-        <p class="sub">Each panel: last 7 days actual (gray) vs. tomorrow's forecast (blue).</p>
-        <div id="chart-forecast-gen-load" class="chart" style="height:440px"></div>
-      </div>
-    </div>
-  </div>
-</section>
+  </section>
 
-<section class="chapter" id="forecast-price" data-chapter="forecast-price">
-  <div class="chapter-head">
-    <p class="chapter-kicker">Tomorrow &mdash; <span class="delivery-date">&hellip;</span></p>
-    <h2>Price forecast</h2>
-  </div>
-  <div class="scroll-wrap">
-    <div class="chapter-copy" data-scene="forecast-price">
-      <div class="narrative-box" id="narrative-price-driver">Loading summary&hellip;</div>
-      <div class="beats">
-        <div class="beat" data-step="0">Here's what the model expects tomorrow's price to do, hour by hour.</div>
-        <div class="beat" data-step="1">The shaded band is its uncertainty &mdash; how sure the model is at
-          each hour. A wider band means a less certain call.</div>
-        <div class="beat" data-step="2">It leans most on <strong><span data-fill="drivers">&hellip;</span></strong>.
-          That's a SHAP decomposition of this model's own reasoning, not proven real-world cause.</div>
+  <section class="chapter slide" id="forecast-gen-load" data-chapter="forecast-gen-load">
+    <div class="chapter-head">
+      <p class="chapter-kicker">Tomorrow &mdash; <span class="delivery-date">&hellip;</span></p>
+      <h2>Generation and load forecast</h2>
+    </div>
+    <div class="slide-body">
+      <div class="chart-col">
+        <div class="panel">
+          <h2>Wind, solar &amp; load &mdash; recent actual vs. tomorrow's forecast</h2>
+          <p class="sub">Each panel: last 7 days actual (gray) vs. tomorrow's forecast (blue).</p>
+          <div id="chart-forecast-gen-load" class="chart" style="height:460px"></div>
+        </div>
+      </div>
+      <div class="caption-col">
+        <div class="narrative-box" id="narrative-gen-load-forecast">Loading summary&hellip;</div>
       </div>
     </div>
-    <div class="chapter-sticky">
-      <div class="panel">
-        <h2>24-hour price forecast</h2>
-        <p class="sub">Line: forecast. Band: conformal prediction interval. Gray: last 7 days actual.</p>
-        <div id="chart-forecast-price" class="chart" style="height:300px"></div>
-      </div>
-      <div class="panel">
-        <h2>What's driving tomorrow's price forecast</h2>
-        <p class="sub">Mean signed SHAP contribution per category across the 24 forecast hours.</p>
-        <div id="chart-shap" class="chart" style="height:300px"></div>
-      </div>
-    </div>
-  </div>
-</section>
+  </section>
 
-<section class="chapter" id="track-record" data-chapter="track-record">
-  <div class="chapter-head">
-    <p class="chapter-kicker">The track record</p>
-    <h2>How good is any of this?</h2>
-  </div>
-  <div class="scroll-wrap">
-    <div class="chapter-copy" data-scene="track-record">
-      <div class="narrative-box" id="narrative-track-record">Loading summary&hellip;</div>
-      <div class="beats">
-        <div class="beat" data-step="0">So how good is any of this? Over the last
-          <strong><span data-fill="window">&hellip;</span></strong>, the day-ahead price forecast was off by
-          <strong><span data-fill="mae">&hellip;</span></strong> on average.</div>
-        <div class="beat" data-step="1">Good enough to plan around &mdash; which is the whole point. For how
-          Germany's market got this volatile in the first place &mdash; a decade of prices, the 2022 gas
-          shock, the renewable rise &mdash; see the longer story.</div>
-      </div>
-      <a class="cta-button closing-cta" href="../index.html">Read the history &rarr;</a>
+  <section class="chapter slide" id="forecast-price" data-chapter="forecast-price">
+    <div class="chapter-head">
+      <p class="chapter-kicker">Tomorrow &mdash; <span class="delivery-date">&hellip;</span></p>
+      <h2>Price forecast</h2>
     </div>
-    <div class="chapter-sticky">
-      <div class="panel">
-        <h2>Recent issued forecasts vs. what actually happened</h2>
-        <p class="sub">Blue: forecast issued the day before delivery. Gray: realised price. Band: prediction interval.</p>
-        <div id="chart-track-record" class="chart" style="height:360px"></div>
+    <div class="slide-body">
+      <div class="chart-col">
+        <div class="panel">
+          <h2>24-hour price forecast</h2>
+          <p class="sub">Line: forecast. Band: conformal prediction interval. Gray: last 7 days actual.</p>
+          <div id="chart-forecast-price" class="chart" style="height:280px"></div>
+        </div>
+        <div class="panel">
+          <h2>What's driving tomorrow's price forecast</h2>
+          <p class="sub">Mean signed SHAP contribution per category across the 24 forecast hours.</p>
+          <div id="chart-shap" class="chart" style="height:280px"></div>
+        </div>
+      </div>
+      <div class="caption-col">
+        <div class="narrative-box" id="narrative-price-driver">Loading summary&hellip;</div>
       </div>
     </div>
-  </div>
-</section>
+  </section>
 
-<footer class="story-footer">
+  <section class="chapter slide" id="track-record" data-chapter="track-record">
+    <div class="chapter-head">
+      <p class="chapter-kicker">The track record</p>
+      <h2>How good is any of this?</h2>
+    </div>
+    <div class="slide-body">
+      <div class="chart-col">
+        <div class="panel">
+          <h2>Recent issued forecasts vs. what actually happened</h2>
+          <p class="sub">Blue: forecast issued the day before delivery. Gray: realised price. Band: prediction interval.</p>
+          <div id="chart-track-record" class="chart" style="height:440px"></div>
+        </div>
+      </div>
+      <div class="caption-col">
+        <div class="narrative-box" id="narrative-track-record">Loading summary&hellip;</div>
+        <a class="cta-button closing-cta" href="../index.html">Read the history &rarr;</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<div class="deck-controls" role="group" aria-label="Slide navigation">
+  <button class="deck-btn" id="deck-prev" type="button">&lsaquo; Back</button>
+  <div class="deck-dots" id="deck-dots"></div>
+  <button class="deck-btn" id="deck-next" type="button">Next &rsaquo;</button>
+</div>
+
+<footer class="story-footer" id="story-footer" hidden>
   <div class="sources">
     <p>Data: <a href="https://smard.de" target="_blank" rel="noopener">SMARD</a> (prices,
     generation, load) &middot; neighbouring bidding-zone prices &middot; TTF gas &amp; EU
@@ -191,47 +163,82 @@
 <script src="common.js"></script>
 <script src="forecast-story.js"></script>
 <script>
-// Nav: click-to-scroll + active-chapter highlight. Highlight is driven by an
-// IntersectionObserver over the chapter sections (independent of the beat
-// stepping below), so it stays correct in the hero and closing chapters too.
-const navLinks = document.querySelectorAll(".story-nav .nav-link");
+// Slide deck. One chapter is shown at a time; left/right (arrow keys, the Back/
+// Next buttons, the dots, or a touch swipe) steps between them. There is no
+// scroll-driven stepping — each chart is left in its final annotated state by
+// registerScene() in forecast-story.js, and the .narrative-box carries the
+// chapter's summary. Charts built while their slide was display:none render at
+// zero width, so we resize the active slide's charts whenever it is shown.
+const slides = Array.from(document.querySelectorAll(".slide"));
+const navLinks = Array.from(document.querySelectorAll(".story-nav .nav-link"));
+const brand = document.querySelector(".story-nav .brand");
+const prevBtn = document.getElementById("deck-prev");
+const nextBtn = document.getElementById("deck-next");
+const dotsWrap = document.getElementById("deck-dots");
+const footer = document.getElementById("story-footer");
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+let current = 0;
 
-navLinks.forEach((btn) => {
-  btn.addEventListener("click", () => {
-    document.getElementById(btn.dataset.chapter)
-      ?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
-  });
+const dots = slides.map((_, i) => {
+  const dot = document.createElement("button");
+  dot.type = "button";
+  dot.className = "deck-dot";
+  dot.setAttribute("aria-label", `Go to slide ${i + 1} of ${slides.length}`);
+  dot.addEventListener("click", () => goTo(i));
+  dotsWrap.appendChild(dot);
+  return dot;
 });
 
-const setActive = (chapterId) =>
-  navLinks.forEach((el) => el.classList.toggle("active", el.dataset.chapter === chapterId));
-
-const sectionObserver = new IntersectionObserver((entries) => {
-  entries.forEach((e) => { if (e.isIntersecting) setActive(e.target.dataset.chapter); });
-}, { rootMargin: "-45% 0px -45% 0px", threshold: 0 });
-document.querySelectorAll("section[data-chapter]").forEach((s) => sectionObserver.observe(s));
-
-// Sticky-graphic scrollytelling. Each beat drives its chapter's chart to a
-// visual state (SCENES/applyBeat live in forecast-story.js). Desktop only:
-// below 860px the charts are left in their final annotated state (see
-// registerScene) and the beats collapse to plain text under the chart — no
-// stepping, and the arrow-key chapter paging is gone entirely.
-const beatMedia = window.matchMedia("(max-width: 860px)");
-let scroller = null;
-if (!beatMedia.matches && document.querySelectorAll(".beat").length) {
-  scroller = scrollama();
-  scroller.setup({ step: ".beat", offset: 0.6 }).onStepEnter(({ element }) => {
-    document.querySelectorAll(".beat").forEach((b) => b.classList.remove("is-active"));
-    element.classList.add("is-active");
-    const scene = element.closest("[data-scene]")?.dataset.scene;
-    const step = parseInt(element.dataset.step, 10);
-    if (scene && window.SCENES && window.SCENES[scene] && Number.isFinite(step)) {
-      try { window.SCENES[scene].applyBeat(step); } catch (err) { console.warn("applyBeat", scene, err); }
-    }
+function resizeCharts(slide) {
+  if (!window.Plotly) return;
+  slide.querySelectorAll(".chart").forEach((div) => {
+    if (div.data) Plotly.Plots.resize(div);
   });
-  window.addEventListener("resize", () => scroller.resize());
 }
+
+function goTo(i) {
+  current = Math.max(0, Math.min(slides.length - 1, i));
+  slides.forEach((s, idx) => s.classList.toggle("is-active", idx === current));
+  dots.forEach((d, idx) => d.classList.toggle("is-active", idx === current));
+  const chapter = slides[current].dataset.chapter;
+  navLinks.forEach((el) => el.classList.toggle("active", el.dataset.chapter === chapter));
+  prevBtn.disabled = current === 0;
+  nextBtn.disabled = current === slides.length - 1;
+  if (footer) footer.hidden = current !== slides.length - 1;
+  window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
+  requestAnimationFrame(() => resizeCharts(slides[current]));
+}
+
+prevBtn.addEventListener("click", () => goTo(current - 1));
+nextBtn.addEventListener("click", () => goTo(current + 1));
+brand.addEventListener("click", (e) => { e.preventDefault(); goTo(0); });
+navLinks.forEach((btn) => btn.addEventListener("click", () => {
+  const idx = slides.findIndex((s) => s.dataset.chapter === btn.dataset.chapter);
+  if (idx >= 0) goTo(idx);
+}));
+
+document.addEventListener("keydown", (e) => {
+  if (e.target.closest("input, textarea, select")) return;
+  if (e.key === "ArrowRight") goTo(current + 1);
+  else if (e.key === "ArrowLeft") goTo(current - 1);
+});
+
+// Touch swipe for mobile, where the arrow keys aren't available.
+let touchX = null;
+document.addEventListener("touchstart", (e) => { touchX = e.changedTouches[0].clientX; }, { passive: true });
+document.addEventListener("touchend", (e) => {
+  if (touchX === null) return;
+  const dx = e.changedTouches[0].clientX - touchX;
+  if (Math.abs(dx) > 60) goTo(current + (dx < 0 ? 1 : -1));
+  touchX = null;
+}, { passive: true });
+
+// The charts finish their async builds after this script runs; keep the visible
+// slide correctly sized as they land.
+window.addEventListener("load", () => resizeCharts(slides[current]));
+setTimeout(() => resizeCharts(slides[current]), 1500);
+
+goTo(0);
 </script>
 </body>
 </html>

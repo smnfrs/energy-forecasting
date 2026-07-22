@@ -26,54 +26,96 @@
   font-style: italic;
 }
 
-.stat-line-group {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 0 0 22px;
-  font-size: 13.5px;
-  color: var(--text-secondary);
-  max-width: 46ch;
+/* ── Slide deck ──────────────────────────────────────────────────────────
+   One chapter is shown at a time; left/right (arrow keys, the Back/Next
+   buttons, the dots, or a swipe) steps between them (controller in index.html).
+   Because only the active slide is in flow, no neighbouring chapter can bleed in
+   — the failure of the earlier scroll layout. Each chart sits in its final
+   annotated state (registerScene) beside its .narrative-box summary. */
+.deck { padding-bottom: 84px; }  /* clear the fixed control bar */
+
+.slide { display: none; }
+.slide.is-active { display: block; animation: slide-fade 0.35s ease; }
+@keyframes slide-fade {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
 }
-.stat-line-group strong { color: var(--text-primary); }
 
-/* ── Sticky-graphic scrollytelling (Stage 10b Workstream D) ──────────────
-   Desktop: the chart pins (.chapter-sticky) while these tall beats scroll past,
-   each one revealing a chart state (SCENES.applyBeat). The lead .narrative-box
-   is the mobile/degradation summary and is hidden on desktop so the beats carry
-   the story without repeating it. */
-.chapter-copy[data-scene] > .narrative-box { display: none; }
+.slide-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 20px 0 40px;
+}
+.chart-col .panel + .panel { margin-top: 16px; }
+.caption-col { padding-top: 6px; }
+/* Give the summary room to breathe as the main on-screen copy (it was a cramped
+   side note in the old two-column beat layout). */
+.slide-body .narrative-box {
+  font-size: 16px;
+  line-height: 1.7;
+  max-width: none;
+  position: sticky;
+  top: 76px;
+}
 
-.beats { display: block; }
-.beat {
-  min-height: 72vh;
+/* Closing cross-link under the track-record summary. */
+.closing-cta { display: inline-block; margin-top: 16px; }
+
+/* ── Fixed bottom control bar ────────────────────────────────────────────── */
+.deck-controls {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 30;
   display: flex;
   align-items: center;
-  font-size: 20px;
-  line-height: 1.5;
-  color: var(--text-muted);
-  opacity: 0.4;
-  transition: opacity 0.3s ease, color 0.3s ease;
-  max-width: 34ch;
+  justify-content: center;
+  gap: 18px;
+  padding: 12px 16px;
+  background: color-mix(in srgb, var(--surface-1) 90%, transparent);
+  border-top: 1px solid var(--border);
+  backdrop-filter: blur(6px);
 }
-.beat strong { color: var(--text-primary); font-weight: 600; }
-.beat.is-active { opacity: 1; color: var(--text-primary); }
-.beat[hidden] { display: none; }
-.beat:first-child { min-height: 56vh; align-items: flex-start; padding-top: 6vh; }
-.beat:last-child { min-height: 46vh; }
-
-/* Closing cross-link. A direct child of the copy column (not inside .beats), so
-   it survives on mobile where the beats are hidden — the history link must
-   always be reachable. */
-.closing-cta { display: inline-block; margin-top: 12px; }
+.deck-btn {
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 18px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, opacity 0.2s ease;
+}
+.deck-btn:hover:not(:disabled) { border-color: var(--blue); }
+.deck-btn:disabled { opacity: 0.35; cursor: default; }
+.deck-dots { display: flex; align-items: center; gap: 8px; }
+.deck-dot {
+  width: 9px; height: 9px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--border);
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+.deck-dot.is-active { background: var(--blue); transform: scale(1.3); }
 
 @media (max-width: 860px) {
-  /* Static stack: show the consolidated summary, drop the scroll beats. The
-     charts are left in their final annotated state by registerScene(). */
-  .chapter-copy[data-scene] > .narrative-box { display: block; }
-  .beats { display: none; }
+  .slide-body {
+    grid-template-columns: 1fr;
+    gap: 18px;
+    padding-top: 12px;
+  }
+  .slide-body .narrative-box { position: static; }
+  .deck-btn { padding: 8px 14px; }
+  .deck-controls { gap: 12px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .beat { transition: none; }
+  .slide.is-active { animation: none; }
 }

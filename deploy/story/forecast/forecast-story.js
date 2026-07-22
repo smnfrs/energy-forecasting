@@ -32,26 +32,24 @@ const SHAP_CATEGORY_LABELS = {
   calendar: "Calendar", other: "Other",
 };
 
-// ── Scrollytelling scene registry ──────────────────────────────────────
-// Each chart chapter registers a scene: the beat count and an applyBeat(step)
-// that drives its sticky chart to that beat's visual state. applyBeat is
-// idempotent — it sets the *full* state for `step`, so entering a beat from
-// either scroll direction lands the same. The inline scroll engine (index.html)
-// calls applyBeat on Scrollama step-enter; on mobile, stepping is disabled and
-// each scene is left in its final (fully-annotated) state.
+// ── Scene registry ─────────────────────────────────────────────────────
+// Each chart chapter registers a scene: a beat count and an idempotent
+// applyBeat(step) that sets the *full* chart state for that step. The page is a
+// slide deck (one chapter per slide, stepped with the arrows/buttons in
+// index.html), and each chart is shown in its final, fully-annotated state — so
+// every scene is initialised to its last beat. applyBeat stays exposed on
+// window.SCENES in case a future build wants to re-introduce intermediate reveals.
 const SCENES = {};
-window.SCENES = SCENES;  // the inline scroll engine (index.html) reads this
+window.SCENES = SCENES;
 // Shared handoff for the price-forecast scene, whose two charts (price + SHAP)
 // are built by separate async functions; each populates its slice, then the
 // scene registers once both are ready.
 const sceneState = { "forecast-price": { priceReady: false, shapReady: false } };
-const isMobileWidth = () => window.matchMedia("(max-width: 860px)").matches;
 
 function registerScene(id, steps, applyBeat) {
   SCENES[id] = { steps, applyBeat };
-  // Initial state: final beat on mobile (chart shown fully annotated), first
-  // beat on desktop (the story starts unrevealed and builds as you scroll).
-  try { applyBeat(isMobileWidth() ? steps - 1 : 0); } catch (e) { console.warn("scene init", id, e); }
+  // Deck mode: land each chart on its final, fully-annotated beat.
+  try { applyBeat(steps - 1); } catch (e) { console.warn("scene init", id, e); }
 }
 
 /** Set a computed beat's text slot; hide the whole beat when `text` is null, so a
