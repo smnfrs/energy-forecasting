@@ -2,6 +2,10 @@
 
 Merging two repos — `energy_prices` (EP) and `energy_market_analysis` (EMA) — into a single codebase for day-ahead electricity price and generation/load forecasting for the German energy market.
 
+## Git
+
+Write commit messages the way a person would: a plain, capitalised sentence describing what the commit does, e.g. "Created new story dashboard site" or "Template the forecast-story narrative and retire the LLM path". Do **not** use Conventional Commits prefixes (`fix(...)`, `feat(...)`, `ci(...)`, etc.) or lower-case type codes. One clear sentence is enough; add a short body only when the change genuinely needs explaining. Never add `Co-Authored-By` trailers.
+
 ## Plans
 
 - **`dev-notes/master_plan.md`** — the single source of truth. High-level stages 1-8 with milestones and evaluation templates filled in after each stage.
