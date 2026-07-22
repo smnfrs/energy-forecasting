@@ -34,6 +34,10 @@ Thumbs.db
 # Deploy data (generated, not source)
 deploy/data/
 
+# Station-local systemd units for the daily-forecast trigger (machine-specific;
+# kept out of the published Pages artifact and out of version control)
+deploy/systemd/
+
 # CatBoost
 catboost_info/
 sessions/
