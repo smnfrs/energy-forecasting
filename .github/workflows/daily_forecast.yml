@@ -259,7 +259,14 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
+      # Check out master's tip (not the run's trigger-time SHA) so a daily run
+      # that began before newer site code landed still publishes the current
+      # deploy/ code and can't roll the live site back (deploy-skew guard). The
+      # forecast data is layered in from the artifact below, so only site code is
+      # taken from master.
       - uses: actions/checkout@v4
+        with:
+          ref: master
 
       - name: Download forecast outputs
         uses: actions/download-artifact@v4
