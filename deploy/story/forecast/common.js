@@ -67,7 +67,23 @@ async function fetchJSON(url) {
   }
 }
 
-/** Fill an element with AI narrative text, or a graceful fallback if unavailable. */
+/** Fill an element with a deterministically-templated summary, or a graceful muted
+ * fallback when the builder returns null/empty (missing or malformed source JSON). */
+function renderTemplated(elId, text) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (text) {
+    el.textContent = text;
+    el.classList.remove("narrative-unavailable");
+  } else {
+    el.textContent = "Summary unavailable right now — the numbers and charts are still live.";
+    el.classList.add("narrative-unavailable");
+  }
+}
+
+/** Fill an element with AI narrative text, or a graceful fallback if unavailable.
+ * Retained for the dormant Groq/LLM path (see dev-notes/stage10b_...); the live
+ * page now uses renderTemplated + the deterministic builders instead. */
 function renderNarrative(elId, text, status) {
   const el = document.getElementById(elId);
   if (!el) return;

@@ -2,8 +2,8 @@ name: Daily Forecast
 
 on:
   schedule:
-    # 08:00 UTC = 09:00 CET / 10:00 CEST; D+1 price features use own gen/load forecasts, not SMARD forecasts
-    - cron: "0 8 * * *"
+    # 07:39 UTC = 08:39 CET / 09:39 CEST; offset from the top of the hour to reduce GitHub scheduler contention.
+    - cron: "39 7 * * *"
   workflow_dispatch:
 
 env:
@@ -153,6 +153,11 @@ jobs:
         run: conda run -n energy-forecasting energy-forecasting deploy forecast --skip-update
 
       - name: Generate AI narrative
+        # Dormant since Stage 10b (dev-notes/stage10b_forecast_story_rework.md): the
+        # forecast-story narrative boxes are now deterministic templated text built in
+        # the frontend, so Groq is no longer called on schedule. Re-enable by removing
+        # this guard. narrative.py + its tests stay in the repo.
+        if: false
         continue-on-error: true
         run: conda run -n energy-forecasting energy-forecasting deploy narrative
         env:

@@ -2,7 +2,6 @@
    narratives, forecasts, SHAP attribution) and builds each section's chart(s). */
 
 const YEARLY_DATA = "data/facts_yearly.json";
-const YEARLY_NARRATIVE = "data/narrative_yearly.json";
 const DEPLOY_DATA = "../../data";
 
 // Same fixed categorical order/colors as Stage 9's charts.js GEN_GROUPS, so the
@@ -56,12 +55,6 @@ async function buildYearlyGenLoadChart() {
   renderTable("table-chart-yearly-gen-load",
     ["Date", ...GEN_GROUPS.map(g => g.label), "Load"],
     gl.date.map((d, i) => [d, ...GEN_GROUPS.map(g => gl.generation[g.key][i]), gl.load[i]]));
-
-  const mix = gl.fuel_mix_pct;
-  document.getElementById("stat-fuel-mix").textContent =
-    Object.entries(mix).map(([k, v]) => `${GEN_GROUPS.find(g => g.key === k)?.label ?? k}: ${v}%`).join(" · ");
-  document.getElementById("stat-imports-exports").textContent =
-    `Imports ${gl.imports_pct_of_domestic_gen}% · Exports ${gl.exports_pct_of_domestic_gen}% of domestic generation`;
 }
 
 // ── Chapter 3: yearly prices ────────────────────────────────────────────
@@ -77,19 +70,89 @@ async function buildYearlyPriceChart() {
   Plotly.newPlot("chart-yearly-price", [trace], baseLayout({
     yaxis: Object.assign(baseLayout({}).yaxis, { title: "EUR/MWh", zeroline: true, zerolinecolor: cssVar("--axis") }),
   }), plotConfig);
+}
 
-  document.getElementById("stat-price-mean").textContent = `Mean: ${price.mean_price} EUR/MWh`;
-  document.getElementById("stat-price-extremes").textContent =
-    `Most expensive hour on average: ${price.most_expensive_hour}:00 (${price.most_expensive_hour_avg_price} EUR/MWh) · ` +
-    `Least expensive: ${price.least_expensive_hour}:00 (${price.least_expensive_hour_avg_price} EUR/MWh)`;
-  document.getElementById("stat-negative-hours").textContent =
-    `${price.negative_price_hours} negative-price hours in the trailing year`;
+// ── Templated narrative (deterministic; replaces the dormant Groq/LLM path) ──
+// Each *Sentence(...) is a pure function of already-published JSON: it returns a
+// human sentence string, or null when its load-bearing inputs are absent, so the
+// box degrades to the muted fallback and never prints undefined/NaN/"null %".
+// Kept DOM- and fetch-free so they can be unit-tested against fixture JSON.
+
+function isNum(v) { return typeof v === "number" && isFinite(v); }
+function meanOf(arr) {
+  const xs = (arr || []).filter(isNum);
+  return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+}
+function hourLabel(h) { return `${h}:00`; }
+// e.g. 10.3 → "10% above"; -6 → "6% below"; 0.4 → "in line with".
+function describeDeviation(pct) {
+  const a = Math.round(Math.abs(pct));
+  if (a < 1) return "in line with";
+  return `${a}% ${pct >= 0 ? "above" : "below"}`;
+}
+
+/** Yearly generation & load summary from facts_yearly.json. */
+function yearlyGenLoadSentence(facts) {
+  const cur = facts?.current_year?.gen_load;
+  const mix = cur?.fuel_mix_pct;
+  if (!mix || !isNum(mix.wind) || !isNum(mix.solar)) return null;
+  const parts = [];
+
+  const renew = Math.round(mix.wind + mix.solar);
+  let lead = `Over the last 12 months, wind and solar together supplied ${renew}% of Germany's electricity`;
+  if (isNum(mix.coal)) lead += `, ahead of coal at ${Math.round(mix.coal)}%`;
+  parts.push(lead + ".");
+
+  const prior = facts?.prior_year?.gen_load?.fuel_mix_pct;
+  if (prior) {
+    const shifts = [];
+    for (const key of ["wind", "coal"]) {
+      if (isNum(mix[key]) && isNum(prior[key])) {
+        const d = mix[key] - prior[key];
+        const label = GEN_GROUPS.find(g => g.key === key)?.label ?? key;
+        shifts.push(`${label.toLowerCase()} ${d >= 0 ? "up" : "down"} ${Math.abs(d).toFixed(1)} points`);
+      }
+    }
+    if (shifts.length) parts.push(`Versus the 12 months before, ${shifts.join(" and ")}.`);
+  }
+
+  if (isNum(cur.imports_pct_of_domestic_gen) && isNum(cur.exports_pct_of_domestic_gen)) {
+    parts.push(`Germany imported the equivalent of ${Math.round(cur.imports_pct_of_domestic_gen)}% ` +
+      `of its own generation and exported ${Math.round(cur.exports_pct_of_domestic_gen)}%.`);
+  }
+  return parts.join(" ");
+}
+
+/** Yearly price summary from facts_yearly.json. */
+function yearlyPriceSentence(facts) {
+  const cur = facts?.current_year?.price;
+  if (!cur || !isNum(cur.mean_price)) return null;
+  const parts = [];
+
+  let lead = `Day-ahead power averaged €${Math.round(cur.mean_price)}/MWh over the last 12 months`;
+  const prior = facts?.prior_year?.price;
+  if (prior && isNum(prior.mean_price) && Math.abs(cur.mean_price - prior.mean_price) >= 1) {
+    lead += `, ${cur.mean_price >= prior.mean_price ? "up" : "down"} from €${Math.round(prior.mean_price)} the year before`;
+  }
+  parts.push(lead + ".");
+
+  if (isNum(cur.most_expensive_hour) && isNum(cur.most_expensive_hour_avg_price) &&
+      isNum(cur.least_expensive_hour) && isNum(cur.least_expensive_hour_avg_price)) {
+    parts.push(`On an average day it peaked around ${hourLabel(cur.most_expensive_hour)} ` +
+      `(€${Math.round(cur.most_expensive_hour_avg_price)}/MWh) and was cheapest near ` +
+      `${hourLabel(cur.least_expensive_hour)} (€${Math.round(cur.least_expensive_hour_avg_price)}/MWh).`);
+  }
+  if (isNum(cur.negative_price_hours) && cur.negative_price_hours > 0) {
+    parts.push(`Prices fell below zero in ${cur.negative_price_hours} hours — moments with more ` +
+      `supply than the grid could use.`);
+  }
+  return parts.join(" ");
 }
 
 async function loadYearlyNarrative() {
-  const n = await fetchJSON(YEARLY_NARRATIVE);
-  renderNarrative("narrative-gen-load-yearly", n?.gen_load_yearly_summary, n?.status);
-  renderNarrative("narrative-price-yearly", n?.price_yearly_summary, n?.status);
+  const facts = await fetchJSON(YEARLY_DATA);
+  renderTemplated("narrative-gen-load-yearly", facts ? yearlyGenLoadSentence(facts) : null);
+  renderTemplated("narrative-price-yearly", facts ? yearlyPriceSentence(facts) : null);
 }
 
 // ── Chapter 4: gen/load forecast vs recent actuals ─────────────────────
@@ -200,13 +263,82 @@ async function buildShapChart() {
   }), plotConfig);
 }
 
-async function loadForecastNarrative() {
-  const n = await fetchJSON(`${DEPLOY_DATA}/narrative_forecast.json`);
-  renderNarrative("narrative-gen-load-forecast", n?.gen_load_forecast_note, n?.status);
-  renderNarrative("narrative-price-driver", n?.price_driver_explanation, n?.status);
-  if (n?.delivery_date) {
-    document.querySelectorAll(".delivery-date").forEach(el => { el.textContent = n.delivery_date; });
+/** Gen/load forecast note. `series` is [{label, unit, fMean, rMean, pct}] where
+ *  fMean is tomorrow's forecast mean, rMean the recent 7-day actual mean, pct the
+ *  signed % deviation (null when it can't be computed). Pure/testable. */
+function forecastGenLoadSentenceFrom(series) {
+  const valid = (series || []).filter(s => s && isNum(s.fMean));
+  if (!valid.length) return null;
+  const parts = [];
+
+  const load = valid.find(s => s.label === "Load");
+  if (load) {
+    let s = `Tomorrow's load is forecast to average about ${Math.round(load.fMean).toLocaleString("en-US")} MW`;
+    if (isNum(load.pct)) s += `, ${describeDeviation(load.pct)} the last 7 days`;
+    parts.push(s + ".");
   }
+
+  const ranked = valid.filter(s => isNum(s.pct) && s.label !== "Load")
+    .sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct));
+  if (ranked.length && Math.abs(ranked[0].pct) >= 5) {
+    parts.push(`${ranked[0].label} stands out — forecast ${describeDeviation(ranked[0].pct)} its recent average.`);
+  } else if (parts.length && ranked.length) {
+    parts.push(`Wind and solar are all close to their recent averages.`);
+  }
+  return parts.length ? parts.join(" ") : null;
+}
+
+/** Price-driver note from price_shap.json. Pure/testable. */
+function forecastPriceDriverSentence(shap) {
+  if (!shap?.categories?.length || !shap.category_contributions) return null;
+  const means = shap.categories
+    .map(c => ({ label: SHAP_CATEGORY_LABELS[c] ?? c, v: meanOf(shap.category_contributions[c]) }))
+    .filter(m => isNum(m.v));
+  if (!means.length) return null;
+  means.sort((a, b) => Math.abs(b.v) - Math.abs(a.v));
+  const clause = means.slice(0, 3).map(m =>
+    `${m.label} (${m.v >= 0 ? "+" : "−"}${Math.abs(m.v).toFixed(1)} €/MWh)`);
+
+  let s;
+  if (clause.length === 1) {
+    s = `Tomorrow's price forecast leans mostly on ${clause[0]}.`;
+  } else {
+    const last = clause.pop();
+    s = `Tomorrow's price forecast leans most on ${clause.join(", ")}, then ${last}.`;
+  }
+  return s + " The SHAP attribution explains this specific model's own reasoning, " +
+    "not verified real-world market causality.";
+}
+
+/** Assemble the gen/load series inputs by fetching forecast + recent-actual JSON. */
+async function loadForecastNarrative() {
+  const price = await fetchJSON(`${DEPLOY_DATA}/price_forecast.json`);
+  const deliveryDate = price?.forecasts?.[0]?.timestamp?.slice(0, 10) ?? null;
+  if (deliveryDate) {
+    document.querySelectorAll(".delivery-date").forEach(el => { el.textContent = deliveryDate; });
+  }
+
+  const actuals = await fetchJSON(`${DEPLOY_DATA}/gen_load_actuals.json`);
+  const series = [];
+  for (const t of GEN_LOAD_TARGETS) {
+    const fc = await fetchJSON(`${DEPLOY_DATA}/gen_load/${t.key}_national.json`);
+    if (!fc?.forecasts?.length) continue;
+    // Prefer the delivery day; fall back to the first 24 forecast hours if the
+    // snapshots don't line up (e.g. stale committed data).
+    let day = deliveryDate
+      ? fc.forecasts.filter(f => (f.timestamp || "").slice(0, 10) === deliveryDate) : [];
+    if (!day.length) day = fc.forecasts.slice(0, 24);
+    const fMean = meanOf(day.map(f => f.forecast));
+    const rMean = meanOf((actuals?.[t.key]?.days ?? []).slice(-7).flatMap(d => d.values ?? []));
+    series.push({
+      label: t.label, unit: t.unit, fMean, rMean,
+      pct: (isNum(fMean) && isNum(rMean) && rMean !== 0) ? (fMean - rMean) / rMean * 100 : null,
+    });
+  }
+  renderTemplated("narrative-gen-load-forecast", forecastGenLoadSentenceFrom(series));
+
+  const shap = await fetchJSON(`${DEPLOY_DATA}/price_shap.json`);
+  renderTemplated("narrative-price-driver", forecastPriceDriverSentence(shap));
 }
 
 buildYearlyGenLoadChart();

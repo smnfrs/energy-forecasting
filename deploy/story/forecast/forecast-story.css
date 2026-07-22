@@ -12,7 +12,7 @@
   max-width: 52ch;
 }
 .narrative-box::before {
-  content: "AI summary";
+  content: "Summary";
   display: block;
   font-size: 11px;
   font-weight: 600;

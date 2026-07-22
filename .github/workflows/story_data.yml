@@ -64,12 +64,14 @@ jobs:
       - name: Build Stage 9 history story data
         run: conda run -n energy-forecasting python scripts/build_story_data.py
 
-      - name: Build Stage 10 forecast story data + weekly narrative
+      - name: Build Stage 10 forecast story data
+        # The weekly Groq yearly-narrative step is dormant since Stage 10b
+        # (dev-notes/stage10b_forecast_story_rework.md): the yearly summaries are now
+        # deterministic templated text built in the frontend from facts_yearly.json.
+        # Re-enable by restoring `energy-forecasting deploy narrative-yearly` below
+        # (and the GROQ_API_KEY env). narrative.py + its tests stay in the repo.
         run: |
           conda run -n energy-forecasting python scripts/build_forecast_story_data.py
-          conda run -n energy-forecasting energy-forecasting deploy narrative-yearly
-        env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
 
       - name: Commit refreshed story data
         run: |

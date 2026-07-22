@@ -24,37 +24,32 @@
 
 <section class="hero chapter" id="hook" data-chapter="hook">
   <p class="kicker">Tomorrow's forecast, explained</p>
-  <h1>Renewables make German power cheaper and harder to predict, both at once.</h1>
+  <h1>German power prices have grown far more volatile &mdash; and good forecasts are how the grid keeps up.</h1>
   <p class="stat-line">
-    <!-- TODO(user): replace with the introduction copy on system instability from
-         renewables growth + geopolitics, and why high-quality forecasting enables
-         the flexibility the grid needs. Placeholder below so the page renders. -->
-    As wind and solar take a growing share of Germany's generation mix, day-ahead prices swing
-    harder and faster than they used to. Good forecasts are what let flexible demand, storage,
-    and trading respond to that swing instead of just absorbing it. This page walks through the
-    last year of data, then explains what the model is forecasting for tomorrow and why.
+    German energy generation needs to adapt for the 21st century, but renewables create
+    challenges. The increasing proportion of renewables in the energy mix, together with more
+    volatile commodity prices, has caused the volatility of electricity prices to explode. To
+    cope with this volatility, we need a flexible energy system, and that flexibility requires
+    high-quality forecasts. This page walks through the last 12 months of data, then explains
+    what the model is forecasting for tomorrow and why.
   </p>
   <p class="scroll-hint">Scroll to begin &darr;</p>
 </section>
 
 <section class="chapter" id="yearly-gen-load" data-chapter="yearly-gen-load">
   <div class="chapter-head">
-    <p class="chapter-kicker">The last year</p>
+    <p class="chapter-kicker">The last 12 months</p>
     <h2>Generation and load</h2>
   </div>
   <div class="scroll-wrap">
     <div class="chapter-copy">
-      <div class="narrative-box" id="narrative-gen-load-yearly">Loading AI summary&hellip;</div>
-      <p class="stat-line-group">
-        <span id="stat-fuel-mix">&hellip;</span>
-        <span id="stat-imports-exports">&hellip;</span>
-      </p>
-      <p>Daily generation by fuel type over the trailing 365 days, with total load overlaid.
-      The mix and the imports/exports figures update weekly.</p>
+      <div class="narrative-box" id="narrative-gen-load-yearly">Loading summary&hellip;</div>
+      <p>Daily generation by fuel type over the last 12 months, with total load overlaid.
+      The figures update weekly.</p>
     </div>
     <div class="chapter-sticky">
       <div class="panel">
-        <h2>Daily generation mix &amp; load &mdash; trailing year</h2>
+        <h2>Daily generation mix &amp; load &mdash; the last 12 months</h2>
         <p class="sub">Stacked: generation by fuel group (MWh/day). Line: total load.</p>
         <div id="chart-yearly-gen-load" class="chart" style="height:420px"></div>
         <button class="table-toggle" data-table-for="chart-yearly-gen-load">View data as table</button>
@@ -66,22 +61,17 @@
 
 <section class="chapter" id="yearly-price" data-chapter="yearly-price">
   <div class="chapter-head">
-    <p class="chapter-kicker">The last year</p>
+    <p class="chapter-kicker">The last 12 months</p>
     <h2>Prices</h2>
   </div>
   <div class="scroll-wrap">
     <div class="chapter-copy">
-      <div class="narrative-box" id="narrative-price-yearly">Loading AI summary&hellip;</div>
-      <p class="stat-line-group">
-        <span id="stat-price-mean">&hellip;</span>
-        <span id="stat-price-extremes">&hellip;</span>
-        <span id="stat-negative-hours">&hellip;</span>
-      </p>
-      <p>Every hourly DE-LU day-ahead price over the trailing 365 days.</p>
+      <div class="narrative-box" id="narrative-price-yearly">Loading summary&hellip;</div>
+      <p>Every hourly DE-LU day-ahead price over the last 12 months.</p>
     </div>
     <div class="chapter-sticky">
       <div class="panel">
-        <h2>Hourly DE-LU price &mdash; trailing year</h2>
+        <h2>Hourly DE-LU price &mdash; the last 12 months</h2>
         <div id="chart-yearly-price" class="chart" style="height:340px"></div>
       </div>
     </div>
@@ -95,7 +85,7 @@
   </div>
   <div class="scroll-wrap">
     <div class="chapter-copy">
-      <div class="narrative-box" id="narrative-gen-load-forecast">Loading AI summary&hellip;</div>
+      <div class="narrative-box" id="narrative-gen-load-forecast">Loading summary&hellip;</div>
       <p>Each panel compares the last 7 days of actual national generation/load (gray) to the
       forecast for tomorrow (blue), so any extreme forecast value stands out against recent
       history.</p>
@@ -116,7 +106,7 @@
   </div>
   <div class="scroll-wrap">
     <div class="chapter-copy">
-      <div class="narrative-box" id="narrative-price-driver">Loading AI summary&hellip;</div>
+      <div class="narrative-box" id="narrative-price-driver">Loading summary&hellip;</div>
       <p>The bar chart is a real SHAP (SHapley Additive exPlanations) decomposition of the
       production ensemble's own prediction — a signed EUR/MWh contribution per category,
       relative to the model's own baseline. It explains this specific model's reasoning, not
@@ -152,7 +142,7 @@
     <p>Data: <a href="https://smard.de" target="_blank" rel="noopener">SMARD</a> (prices,
     generation, load) &middot; neighbouring bidding-zone prices &middot; TTF gas &amp; EU
     carbon benchmarks.</p>
-    <p>AI summaries are generated from these published numbers and may be unavailable at times;
+    <p>The written summaries are generated deterministically from these published numbers;
     the charts and figures above are always live regardless.</p>
     <p>Built on the same models behind the <a href="../../index.html">live DE-LU forecast dashboard</a>.</p>
   </div>
