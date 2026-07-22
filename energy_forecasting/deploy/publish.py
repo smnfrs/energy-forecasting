@@ -45,7 +45,6 @@ PRICE_FORECAST_PATH = DEPLOY_DATA_DIR / "price_forecast.json"
 FEATURE_AUDIT_PATH = DEPLOY_DATA_DIR / "feature_audit.json"
 PRICE_SHAP_PATH = DEPLOY_DATA_DIR / "price_shap.json"
 FEATURE_AUDIT_RUNS_DIR = DEPLOY_DATA_DIR / "feature_audit_runs"
-HISTORY_DAYS = 30
 
 # TSO region code → per-TSO filename suffix (must match JS GEN_LOAD_CARDS tso keys)
 _REGION_SUFFIX: dict[str, str] = {
@@ -163,7 +162,12 @@ def write_price_shap(price_df: pd.DataFrame, issued_at: str | None = None) -> No
 
 
 def _append_price_history(price_df: pd.DataFrame, issued_at: str) -> None:
-    """Append today's price forecast to forecast_history.json (rolling 30d)."""
+    """Append today's price forecast to forecast_history.json.
+
+    The full history is retained (no rolling window). Each entry carries its
+    ``issued_at`` timestamp and a ``source`` ("production" for a scheduled
+    deployment, "backtest" for a backfilled entry) so provenance is preserved.
+    """
     entry: dict = {
         "target": "price",
         "region": "DE_LU",
@@ -192,9 +196,9 @@ def _append_price_history(price_df: pd.DataFrame, issued_at: str) -> None:
         if not (f.get("forecasts") and f["forecasts"][0]["timestamp"][:10] == new_delivery)
     ]
     forecasts.append(entry)
-    # Keep last HISTORY_DAYS entries
+    # Keep the full history, ordered chronologically by issue time. Production
+    # forecasts are the real record and are never trimmed.
     forecasts = sorted(forecasts, key=lambda f: f.get("issued_at", ""))
-    forecasts = forecasts[-HISTORY_DAYS:]
 
     history["forecasts"] = forecasts
     history["count"] = len(forecasts)
@@ -753,15 +757,19 @@ def write_gen_load_hindcast() -> None:
         logger.info(f"Written gen_load_hindcast.json ({len(result)} targets)")
 
 
-def backfill_price_history_from_model(n_days: int = 60) -> int:
-    """Retroactively generate price forecasts for the past n_days using the production ensemble.
+def backfill_price_history_from_model(n_days: int = 7) -> int:
+    """Retroactively generate price forecasts for the past ``n_days`` using the production ensemble.
 
-    Runs feature engineering ONCE on merged.parquet, then batch-predicts for all target
-    delivery dates not already covered by production entries in forecast_history.json.
-    Injects pseudo-history entries (source="backtest") so the price history and error
-    charts can display 30+ days of data before production runs have accumulated.
+    This is a last-resort gap-filler: when a bug or outage means production runs
+    didn't record a forecast for some recent days, it batch-predicts those dates
+    with the current models and injects entries tagged ``source="backtest"`` so the
+    charts aren't left with holes. The default matches the 7-day chart window;
+    callers can pass a larger ``n_days`` to patch a bigger gap (own gen/load
+    forecast coverage bounds how far back it can go).
 
-    Returns the number of new pseudo-history entries written.
+    Feature engineering runs ONCE on merged.parquet, then predicts for every target
+    delivery date not already present in forecast_history.json — production entries
+    are never overwritten. Returns the number of new backtest entries written.
     """
     try:
         from energy_forecasting.config import PROCESSED_DATA_DIR
@@ -797,8 +805,10 @@ def backfill_price_history_from_model(n_days: int = 60) -> int:
     merged = pd.read_parquet(merged_path)
     last_ts = merged.index.max()
 
+    # Include i=0 (the most recent complete day) so the gap-fill reaches the
+    # frontier; an incomplete current day is dropped by the 24-row guard below.
     target_dates = []
-    for i in range(n_days, 0, -1):
+    for i in range(n_days, -1, -1):
         d = (last_ts - pd.Timedelta(days=i)).normalize()
         delivery_date = d.strftime("%Y-%m-%d")
         if delivery_date not in existing_delivery_dates:
@@ -810,6 +820,15 @@ def backfill_price_history_from_model(n_days: int = 60) -> int:
 
     logger.info(f"backfill_price_history_from_model: engineering features for {len(target_dates)} target dates…")
     try:
+        # merged.parquet carries no forecast_* base columns — they are synthesized
+        # from the own gen/load historical_forecasts artifacts (falling back to
+        # SMARD/actual). The price models require 16-20 forecast_* features, so we
+        # must build them before feature engineering, exactly like run_price_inference.
+        # No strict_index: past rows use the historical waterfall (own -> smard ->
+        # actual), which the healed frontier now covers with own forecasts.
+        from energy_forecasting.features.forecast_inputs import build_forecast_columns
+
+        merged = build_forecast_columns(merged)
         full_features = _eng(merged, PRICE_FEATURES_MAX, validate=False)
     except Exception:
         logger.exception("backfill_price_history_from_model: feature engineering failed")
@@ -944,7 +963,6 @@ def backfill_price_history_from_model(n_days: int = 60) -> int:
 
     all_forecasts = new_entries + history.get("forecasts", [])
     all_forecasts.sort(key=lambda e: e.get("issued_at", ""))
-    all_forecasts = all_forecasts[-HISTORY_DAYS:]
     history["forecasts"] = all_forecasts
     history["count"] = len(all_forecasts)
     HISTORY_PATH.write_text(json.dumps(history, indent=2))

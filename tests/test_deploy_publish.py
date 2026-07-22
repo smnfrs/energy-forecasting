@@ -124,27 +124,46 @@ def test_gen_load_json_valid(tmp_path, monkeypatch):
     assert len(resp.forecasts) == 168
 
 
-def test_history_appends_and_trims(tmp_path, monkeypatch):
-    """History file should deduplicate and retain last 30 entries."""
+def test_history_appends_retains_full_history(tmp_path, monkeypatch):
+    """History file retains the full history (no rolling window) and each entry
+    carries issue-time + production provenance."""
     import energy_forecasting.deploy.publish as pub
 
     monkeypatch.setattr(pub, "HISTORY_PATH", tmp_path / "forecast_history.json")
-    monkeypatch.setattr(pub, "HISTORY_DAYS", 3)
 
-    for i, issued_at in enumerate([
+    issued = [
         "2026-06-28T08:00:00Z",
         "2026-06-29T08:00:00Z",
         "2026-06-30T08:00:00Z",
         "2026-07-01T08:00:00Z",
-    ]):
+    ]
+    for i, issued_at in enumerate(issued):
         price_df = _price_df()
         price_df.index = price_df.index + pd.Timedelta(days=i)
         pub._append_price_history(price_df, issued_at)
 
     history = json.loads((tmp_path / "forecast_history.json").read_text())
-    assert history["count"] == 3  # trimmed to HISTORY_DAYS
+    assert history["count"] == 4  # nothing trimmed
     dates = [f["issued_at"][:10] for f in history["forecasts"]]
-    assert "2026-06-28" not in dates  # oldest dropped
+    assert "2026-06-28" in dates  # oldest retained
+    assert dates == sorted(dates)  # chronological
+    assert all(f["source"] == "production" for f in history["forecasts"])
+    assert all("issued_at" in f for f in history["forecasts"])
+
+
+def test_history_dedupes_delivery_date_keeping_latest(tmp_path, monkeypatch):
+    """Two runs forecasting the same delivery date collapse to one entry (latest wins)."""
+    import energy_forecasting.deploy.publish as pub
+
+    monkeypatch.setattr(pub, "HISTORY_PATH", tmp_path / "forecast_history.json")
+
+    # Same delivery date (index unchanged), two different issue times.
+    pub._append_price_history(_price_df(), "2026-06-29T08:00:00Z")
+    pub._append_price_history(_price_df(), "2026-06-29T14:00:00Z")
+
+    history = json.loads((tmp_path / "forecast_history.json").read_text())
+    assert history["count"] == 1
+    assert history["forecasts"][0]["issued_at"] == "2026-06-29T14:00:00Z"
 
 
 # ── Stage 7 additions ─────────────────────────────────────────────────────────
@@ -524,3 +543,23 @@ def test_backfill_errors_overwrites_changed_forecast_entry(tmp_path, monkeypatch
     assert error["source"] == "production"
     assert error["mae"] == 0.0
     assert error["rmse"] == 0.0
+
+
+def test_backfill_price_history_builds_forecast_columns():
+    """merged.parquet carries no forecast_* base columns — they are synthesized
+    from the gen/load historical_forecasts artifacts by build_forecast_columns.
+
+    The post-leakage-fix price models require 16-20 forecast_* features, so the
+    backfill MUST call build_forecast_columns before engineering features (exactly
+    like run_price_inference). Omitting it makes engineer_features raise KeyError
+    on forecast_gen_total and the backfill silently returns 0 entries. Guard the
+    call so that regression can't recur."""
+    import inspect
+
+    from energy_forecasting.deploy.publish import backfill_price_history_from_model
+
+    source = inspect.getsource(backfill_price_history_from_model)
+    assert "build_forecast_columns" in source, (
+        "backfill_price_history_from_model must call build_forecast_columns before "
+        "feature engineering; price models require forecast_* columns absent from merged"
+    )

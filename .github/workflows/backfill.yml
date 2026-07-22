@@ -7,6 +7,10 @@ on:
         description: "Only recompute errors from existing history (faster). Set to 'true' to skip re-running inference."
         required: false
         default: "false"
+      days:
+        description: "How many recent days of price history to backfill (last-resort gap fill; default matches the 7-day chart). Bounded by own gen/load forecast coverage."
+        required: false
+        default: "7"
 
 env:
   REPO: smnfrs/energy-forecasting
@@ -105,11 +109,14 @@ jobs:
 
       - name: Backfill price history from model (retroactive batch inference)
         if: inputs.skip_inference != 'true'
+        env:
+          BACKFILL_DAYS: ${{ inputs.days }}
         run: |
           cat > /tmp/run_backfill.py << 'PYEOF'
+          import os
           from energy_forecasting.deploy.publish import backfill_price_history_from_model, backfill_errors, write_errors_summary
-          n = backfill_price_history_from_model(n_days=60)
-          print(f"Added {n} pseudo-history entries")
+          n = backfill_price_history_from_model(n_days=int(os.environ["BACKFILL_DAYS"]))
+          print(f"Added {n} backtest history entries")
           backfill_errors()
           write_errors_summary()
           print("Error backfill complete")
@@ -118,11 +125,14 @@ jobs:
 
       - name: Backfill errors only (skip re-running inference)
         if: inputs.skip_inference == 'true'
+        env:
+          BACKFILL_DAYS: ${{ inputs.days }}
         run: |
           cat > /tmp/run_backfill.py << 'PYEOF'
+          import os
           from energy_forecasting.deploy.publish import backfill_price_history_from_model, backfill_errors, write_errors_summary
-          n = backfill_price_history_from_model(n_days=60)
-          print(f"Added {n} pseudo-history entries")
+          n = backfill_price_history_from_model(n_days=int(os.environ["BACKFILL_DAYS"]))
+          print(f"Added {n} backtest history entries")
           backfill_errors()
           write_errors_summary()
           print("Backfill complete")
