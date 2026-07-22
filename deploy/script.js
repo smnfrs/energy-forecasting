@@ -52,6 +52,14 @@
     linear: "#8b5cf6",
   };
 
+  // Distinct per-model palette for the daily-error chart. Category colours alone
+  // collapse sibling models (e.g. two LGBM feature-sets) onto the same colour,
+  // which reads as an indistinct tangle against a colourful legend.
+  const MODEL_PALETTE = [
+    "#22c55e", "#3B82F6", "#f59e0b", "#8b5cf6", "#ef4444",
+    "#06b6d4", "#ec4899", "#84cc16", "#f97316", "#14b8a6",
+  ];
+
   const GL_COLORS = {
     wind_onshore: "#2266CC",
     wind_offshore: "#44AADD",
@@ -390,7 +398,7 @@
 
   function renderGenLoadSummary(genLoad, glActuals) {
     const el = document.getElementById("summary-chart");
-    const { wo, woff, sol, load, gld } = genLoad || {};
+    const { wo, woff, sol, load } = genLoad || {};
 
     if (!wo && !woff && !sol && !load) {
       showNoData(el, "no_gen_load_data"); return;
@@ -414,18 +422,38 @@
         name: s.name,
         stackgroup: "gen_actual",
         fill: actualStackCount === 0 ? "tozeroy" : "tonexty",
-        fillcolor: colorWithAlpha(s.color, 0.65),
+        fillcolor: colorWithAlpha(s.color, 0.5),
         line: { color: s.color, width: 1 },
       });
       actualStackCount++;
     }
 
+    // ── Forecast "other generation" = load − wind_onshore − wind_offshore − solar ──
+    // Mirrors the actual series built by write_gen_load_actuals. We deliberately do
+    // NOT use the gen_load_diff model output here: that target is (total generation −
+    // load), a net-balance quantity that is mostly negative and would drag the stack
+    // far below load. Deriving the residual from the per-source forecasts keeps the
+    // forecast stack consistent with the actual stack (both decompose load).
+    let otherGenFc = null;
+    if (load && wo && woff && sol) {
+      const asMap = d => new Map(d.forecasts.map(f => [f.timestamp, f.forecast]));
+      const woM = asMap(wo), woffM = asMap(woff), solM = asMap(sol);
+      const rows = load.forecasts
+        .map(f => {
+          const w = woM.get(f.timestamp), o = woffM.get(f.timestamp), s = solM.get(f.timestamp);
+          if (w == null || o == null || s == null) return null;
+          return { timestamp: f.timestamp, forecast: f.forecast - w - o - s };
+        })
+        .filter(Boolean);
+      if (rows.length) otherGenFc = { forecasts: rows };
+    }
+
     // ── Forecast generation: translucent stacked areas ──
     const fcSeries = [
-      { data: wo,   name: `${t("wind_onshore")} (${t("forecast")})`,  color: "#2266CC" },
-      { data: woff, name: `${t("wind_offshore")} (${t("forecast")})`, color: "#44AADD" },
-      { data: sol,  name: `${t("solar")} (${t("forecast")})`,         color: "#DDAA00" },
-      { data: gld,  name: `${t("other_gen")} (${t("forecast")})`,     color: "#8899AA" },
+      { data: wo,        name: `${t("wind_onshore")} (${t("forecast")})`,  color: "#2266CC" },
+      { data: woff,      name: `${t("wind_offshore")} (${t("forecast")})`, color: "#44AADD" },
+      { data: sol,       name: `${t("solar")} (${t("forecast")})`,         color: "#DDAA00" },
+      { data: otherGenFc, name: `${t("other_gen")} (${t("forecast")})`,    color: "#8899AA" },
     ].filter(s => s.data);
 
     for (const s of fcSeries) {
@@ -435,8 +463,8 @@
         type: "scatter", mode: "lines",
         name: s.name,
         stackgroup: "gen_fc",
-        fillcolor: colorWithAlpha(s.color, 0.28),
-        line: { color: s.color, width: 1, dash: "dot" },
+        fillcolor: colorWithAlpha(s.color, 0.45),
+        line: { color: s.color, width: 1.5, dash: "dot" },
       });
     }
 
@@ -564,11 +592,14 @@
     if (glActuals && glActuals[cfg.target]) {
       const { xs, ys } = buildActualSeries(glActuals, cfg.target);
       if (xs.length) {
+        // Neutral grey (not cfg.color) so the coloured dashed forecast and hindcast
+        // lines stay legible where the actuals overlap them, mirroring the price
+        // history chart (actual = grey, forecast = coloured).
         traces.push({
           x: xs, y: ys, type: "scatter", mode: "lines",
           name: `${cfg.tsoLabels["national"] || "National"} (${t("actual")})`,
-          line: { color: cfg.color, width: 2.5 },
-          opacity: 0.9,
+          line: { color: "#555555", width: 2 },
+          opacity: 0.85,
         });
       }
     }
@@ -647,9 +678,9 @@
 
   function renderMonitoringTab() {
     renderModelMaeChart(_allData.actuals, _allData.history, _allData.metadata);
-    renderErrorTrend(_allData.metadata);
     renderHourlyErrorProfile(_allData.actuals, _allData.history);
     renderCompositionChart(_allData.metadata);
+    renderErrorTrend(_allData.metadata);
     renderGenLoadErrors(_allData.glErrors);
     renderFeatureAudit(_allData.featureAudit);
     renderRetrainLog(_allData.retrainHistory);
@@ -686,23 +717,22 @@
     const traces = [];
 
     // Per-model lines
-    const modelsByName = Object.fromEntries((metadata?.models || []).map(m => [m.name, m]));
-    for (const modelName of modelNames) {
+    modelNames.forEach((modelName, i) => {
       const maes = matched.map(e => {
         const mf = e.model_forecasts?.[modelName];
         if (!mf || mf.length < 24) return null;
         return mae24(mf, actualsMap[e.date]);
       });
-      const cat = modelsByName[modelName]?.category || "";
+      const color = MODEL_PALETTE[i % MODEL_PALETTE.length];
       traces.push({
         x: dates, y: maes,
         type: "scatter", mode: "lines+markers",
         name: shortModelName(modelName),
-        line: { color: CATEGORY_COLORS[cat] || "#aaa", width: 1.5 },
-        marker: { size: 4 },
+        line: { color, width: 1.5 },
+        marker: { size: 4, color },
         connectgaps: false,
       });
-    }
+    });
 
     // Ensemble line (always available from entry.prices)
     const ensembleMaes = matched.map(e => mae24(e.prices, actualsMap[e.date]));
@@ -710,8 +740,8 @@
       x: dates, y: ensembleMaes,
       type: "scatter", mode: "lines+markers",
       name: "Ensemble",
-      line: { color: "#111111", width: 2.5, dash: "dash" },
-      marker: { size: 5, symbol: "diamond" },
+      line: { color: "#334155", width: 2.5, dash: "dash" },
+      marker: { size: 5, symbol: "diamond", color: "#334155" },
     });
 
     const shapes = [], annotations = [];
@@ -740,7 +770,11 @@
     }, { responsive: true, displayModeBar: false });
   }
 
-  // Chart 2: per-model CV MAE horizontal bar chart with ensemble holdout reference.
+  // Per-model cross-validation MAE (training folds), sorted best-first. This is a
+  // relative model-strength view that belongs next to the ensemble composition.
+  // We do NOT overlay the ensemble holdout MAE: CV MAE (full-history rolling folds)
+  // and the recent 90-day holdout are different windows, so the comparison is
+  // apples-to-oranges and misleadingly implies every model is far worse than the blend.
   function renderErrorTrend(metadata) {
     const el = document.getElementById("error-trend-chart");
     if (!el) return;
@@ -768,17 +802,6 @@
       yaxis: { automargin: true },
       margin: { t: 10, r: 80, b: 50, l: 200 },
       height: Math.max(180, models.length * 45 + 60),
-      shapes: [{
-        type: "line",
-        x0: metadata.holdout_mae, x1: metadata.holdout_mae,
-        y0: -0.5, y1: models.length - 0.5,
-        line: { color: "#555", width: 1.5, dash: "dash" },
-      }],
-      annotations: [{
-        x: metadata.holdout_mae, y: models.length - 0.5,
-        text: `Ensemble holdout: ${metadata.holdout_mae?.toFixed(2)}`,
-        showarrow: false, xanchor: "left", font: { size: 11 },
-      }],
     }, { responsive: true, displayModeBar: false });
   }
 
