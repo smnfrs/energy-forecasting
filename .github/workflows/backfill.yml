@@ -42,7 +42,9 @@ jobs:
         run: |
           gh release download v1.0.0 --repo $REPO --pattern 'models.tar.gz' --dir /tmp/ --clobber
           tar -xzf /tmp/models.tar.gz
-          gh release download v1.0.0 --repo $REPO --pattern 'price_feature_cols.json' --dir models/ --clobber 2>/dev/null || true
+          # price_feature_cols.json ships inside models.tar.gz. Do NOT also pull the
+          # standalone Release asset — it is never refreshed and carries the stale
+          # pre-leakage-fix prog_* schema, which the price schema validator rejects.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
