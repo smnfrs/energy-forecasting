@@ -157,6 +157,16 @@ jobs:
           path: deploy/data/
           retention-days: 7
 
+      # Guard against deploy-skew: this job checked out master at launch, but a
+      # long backfill can finish after newer site code has landed on master. Refresh
+      # the deploy/ *code* to the current master tip right before publishing so we
+      # never roll the live site back to stale HTML/JS/CSS. deploy/data/ is
+      # gitignored, so the forecast data generated above is left untouched.
+      - name: Sync site code to latest master (avoid deploy-skew)
+        run: |
+          git fetch origin master
+          git checkout FETCH_HEAD -- deploy
+
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
