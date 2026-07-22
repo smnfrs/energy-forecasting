@@ -36,3 +36,44 @@
   max-width: 46ch;
 }
 .stat-line-group strong { color: var(--text-primary); }
+
+/* ── Sticky-graphic scrollytelling (Stage 10b Workstream D) ──────────────
+   Desktop: the chart pins (.chapter-sticky) while these tall beats scroll past,
+   each one revealing a chart state (SCENES.applyBeat). The lead .narrative-box
+   is the mobile/degradation summary and is hidden on desktop so the beats carry
+   the story without repeating it. */
+.chapter-copy[data-scene] > .narrative-box { display: none; }
+
+.beats { display: block; }
+.beat {
+  min-height: 72vh;
+  display: flex;
+  align-items: center;
+  font-size: 20px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  opacity: 0.4;
+  transition: opacity 0.3s ease, color 0.3s ease;
+  max-width: 34ch;
+}
+.beat strong { color: var(--text-primary); font-weight: 600; }
+.beat.is-active { opacity: 1; color: var(--text-primary); }
+.beat[hidden] { display: none; }
+.beat:first-child { min-height: 56vh; align-items: flex-start; padding-top: 6vh; }
+.beat:last-child { min-height: 46vh; }
+
+/* Closing cross-link. A direct child of the copy column (not inside .beats), so
+   it survives on mobile where the beats are hidden — the history link must
+   always be reachable. */
+.closing-cta { display: inline-block; margin-top: 12px; }
+
+@media (max-width: 860px) {
+  /* Static stack: show the consolidated summary, drop the scroll beats. The
+     charts are left in their final annotated state by registerScene(). */
+  .chapter-copy[data-scene] > .narrative-box { display: block; }
+  .beats { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .beat { transition: none; }
+}

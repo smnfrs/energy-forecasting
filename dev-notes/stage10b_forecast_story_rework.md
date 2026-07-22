@@ -5,26 +5,97 @@ six problems the user identified after living with the deployed page, plus a few
 found alongside them. Not a new stage — a revision of Stage 10, hence "10b".
 
 **Detailed plan:** this document
-**Status:** planned 2026-07-21. **Workstreams A + B implemented 2026-07-22.**
+**Status:** planned 2026-07-21. **Workstreams A + B implemented, committed, pushed
+and deployed live 2026-07-22** (commit `5a8e339`; `deploy_static` run 29910815408).
 Supersedes parts of Stage 10's frontend and narrative design; the Stage 10
-SHAP/facts *numeric* pipeline is unchanged. C → D → E still to do.
+SHAP/facts *numeric* pipeline is unchanged. **All workstreams A–E implemented
+2026-07-22. A + B are committed/deployed; C, D, E implemented locally and not yet
+committed (pending user review of the final version).**
 
 **Progress:**
-- **A (copy & claims) — done 2026-07-22.** Hero reframed to the two-cause
+- **A (copy & claims) — done, live 2026-07-22.** Hero reframed to the two-cause
   throughline (renewable share *and* commodity prices → volatility → forecasting
   as enabler); `TODO(user)` and the "cheaper" claim removed. Year labels relabelled
   ("the last 12 months" / "the 12 months before" / "the same week a year ago").
-- **B (template narrative, LLM dormant) — done 2026-07-22.** All four narrative
-  boxes now built by deterministic JS sentence builders (`yearlyGenLoadSentence`,
-  `yearlyPriceSentence`, `forecastGenLoadSentenceFrom`, `forecastPriceDriverSentence`
-  in `forecast-story.js`) from already-published JSON; pure/DOM-free for testing.
-  MW/MWh unit bug fixed at source. `stat-line-group` spans removed (no more double
-  presentation). "AI summary" chrome → "Summary". Degradation contract met (verified
-  via node harness: full data, missing JSON, absent fields — no `undefined`/`NaN`/
-  `null %`, muted fallback when whole box degrades). Groq guarded off in both
-  workflows (`daily_forecast.yml` `if: false`; `story_data.yml` yearly-narrative line
-  removed); `narrative.py` + tests kept (8 pass). Frontend no longer fetches
-  `narrative_*.json`.
+- **B (template narrative, LLM dormant) — done, live 2026-07-22.** All four
+  narrative boxes now built by deterministic JS sentence builders
+  (`yearlyGenLoadSentence`, `yearlyPriceSentence`, `forecastGenLoadSentenceFrom`,
+  `forecastPriceDriverSentence` in `forecast-story.js`) from already-published JSON;
+  pure/DOM-free for testing. MW/MWh unit bug fixed at source. `stat-line-group` spans
+  removed (no more double presentation). "AI summary" chrome → "Summary". Degradation
+  contract met (verified via node harness: full data, missing JSON, absent fields —
+  no `undefined`/`NaN`/`null %`, muted fallback when whole box degrades). Groq guarded
+  off in both workflows (`daily_forecast.yml` `if: false`; `story_data.yml`
+  yearly-narrative line removed); `narrative.py` + tests kept (8 pass). Frontend no
+  longer fetches `narrative_*.json`.
+
+- **C (declutter the two yearly charts) — implemented 2026-07-22, not yet
+  committed.** Gen/load chart now weekly-resampled (`weeklyGenLoad`, ~53 points,
+  7-day mean, "MWh/day" scale preserved); the load line is **removed from the
+  default view** (its beat-reveal home lands in D) but weekly load means stay in
+  the detail table. Price chart replaced the ~8,760-point hourly `scattergl` smear
+  with a daily-mean line + shaded **daily min–max** band (`dailyPriceBands`, 365
+  points). Both new functions pure/DOM-free and verified against the committed
+  `facts_yearly.json` (53 weekly points no-null; 365 daily bands, 87 days with a
+  negative hour, range −499→666, all finite). Chart copy/titles in `index.html`
+  updated to match (no more "load overlaid" / "every hourly price"). **Decisions
+  locked:** kept **all 7 fuel groups** (weekly resampling declutters enough; the
+  coal-vs-renewables contrast is the thesis) and **min–max** band (shows the full
+  swing envelope incl. negative troughs, vs p10–p90 which would hide them).
+
+- **D (sticky-graphic scrollytelling) — implemented 2026-07-22, not yet
+  committed.** Each of the four chart chapters is now a sticky graphic that pins
+  while 2–3 short **beats** scroll past (`.beat[data-step]` under
+  `.chapter-copy[data-scene]`). A lightweight **scene registry** in
+  `forecast-story.js` (`SCENES` / `registerScene` / `applyBeat`, exposed on
+  `window.SCENES`) drives each beat's chart state, idempotently (applyBeat sets
+  the full state for a step, so entering from either scroll direction lands the
+  same): gen/load — renewable-share → dim-to-wind+coal shift → load-line reveal;
+  price — mean line → swing band fades in → deepest-trough annotation; gen/load
+  forecast — solar-shape (authored) → annotate the biggest-deviation panel;
+  price forecast — line → PI band fades in → highlight top SHAP bar. Computed beat
+  slots (`data-fill`) are filled from the same JSON the charts use and verified
+  against live snapshots (renew 48%, "wind up 2.5 / coal down 2.3 points", €93/MWh,
+  475 negative hours, "wind offshore 19% below", "Neighbour prices +16.4 / Residual
+  generation −8.6"). Transitions use the simplest mechanism that reads (Plotly
+  `restyle` opacity/visibility, `relayout` annotations toggled) — no chained
+  animations. **Arrow-key chapter paging removed** entirely; nav is now click-to-
+  scroll + an IntersectionObserver active-chapter highlight. **Mobile (<860px):**
+  Scrollama stepping disabled, beats hidden, the lead `.narrative-box` (the
+  Workstream B templated summary) shown as the consolidated caption, and each chart
+  left in its final annotated state (`registerScene` applies the last beat on
+  mobile). Degradation contract preserved: a beat whose computed input is absent is
+  hidden (`fillBeat(..., null)`), scenes that fail to build never register, and
+  `plotted()` guards every restyle. Verified end-to-end with a headless node harness
+  (stubbed `document`/`window`/`Plotly`/`fetch` over the real JSON): all 5 charts
+  plot, all 4 scenes register, every `applyBeat` step runs without throwing; HTML
+  tag-balanced (11 beats, 6 fill slots).
+
+- **E (closing track-record chapter) — implemented 2026-07-22, not yet
+  committed.** The bare "Want the longer story?" CTA block is replaced by a
+  sticky-graphic chapter ("How good is any of this?", nav link added). Chart
+  (`buildTrackRecordChart`): the issued price forecasts from
+  `forecast_history.json` concatenated into one day-before track, realised prices
+  from `actuals.json` overlaid on exactly those delivery dates, plus the PI band.
+  Resolving beat pulls the rolling MAE from `errors_summary.json` ("Over the last
+  7 days … off by about €10/MWh on average", RMSE €16 in the mobile summary via
+  pure `trackRecordSentence`). The history cross-link survives as a `.closing-cta`
+  that is a **sibling** of `.beats` (not a beat), so it stays visible on mobile
+  where beats are hidden. Verified in the headless harness (6 charts plot; the
+  track-record chart is static, so no scene is registered — beat highlighting
+  still works and mobile shows the built/final state).
+
+**Carry into C (and later):**
+- The `.stat-line-group` CSS in `forecast-story.css` is now **dead** (spans removed
+  in B). Leave for now; remove if C/D don't reintroduce stat lines.
+- **Cross-file date alignment:** `forecastGenLoadSentenceFrom` filters gen/load
+  forecasts to the price forecast's delivery day, falling back to the first 24
+  forecast hours when snapshots don't line up (the committed repo snapshot hits the
+  fallback; live aligned data uses delivery-day filtering). Re-check on live data.
+- **No JS test harness landed yet.** The builders were factored pure/DOM-free
+  precisely so a minimal node harness (per § Testing) can be stood up; the sanity
+  check so far is the throwaway node script, not a committed test. Still an open item.
+- Node lives at `/home/smnfrs/miniconda3/envs/nodetmp/bin/node` (no system `node`).
 
 > Naming note: Stage 10's own doc uses "10a–10f" for its internal sub-stages
 > (its "10b" is the yearly-recap narrative). To avoid collision, this doc's units
@@ -356,6 +427,8 @@ D's engine. Each workstream ends deployable.
 - **JS test harness** — default (set 2026-07-22): stand up a minimal DOM-free
   node harness for the sentence builders. Revisit only if factoring the builders
   out of rendering proves disproportionate.
-- Chart 1 fuel-group collapse: 7 groups weekly vs. a reduced set — decide visually.
-- Chart 2 band: min–max vs. p10–p90 — decide visually.
+- ~~Chart 1 fuel-group collapse: 7 groups weekly vs. a reduced set~~ — **decided
+  2026-07-22: kept all 7 groups.** Weekly resampling alone declutters the hairball.
+- ~~Chart 2 band: min–max vs. p10–p90~~ — **decided 2026-07-22: min–max**, to keep
+  the negative-price troughs the thesis relies on.
 - Final wording of the **computed** beat slots — locks when real values render.

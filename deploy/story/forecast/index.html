@@ -19,6 +19,7 @@
   <button class="nav-link" data-chapter="yearly-price">Prices</button>
   <button class="nav-link" data-chapter="forecast-gen-load">Gen/load forecast</button>
   <button class="nav-link" data-chapter="forecast-price">Price forecast</button>
+  <button class="nav-link" data-chapter="track-record">Track record</button>
   <a href="../index.html" class="dash-link">The history &rarr;</a>
 </nav>
 
@@ -42,15 +43,21 @@
     <h2>Generation and load</h2>
   </div>
   <div class="scroll-wrap">
-    <div class="chapter-copy">
+    <div class="chapter-copy" data-scene="yearly-gen-load">
       <div class="narrative-box" id="narrative-gen-load-yearly">Loading summary&hellip;</div>
-      <p>Daily generation by fuel type over the last 12 months, with total load overlaid.
-      The figures update weekly.</p>
+      <div class="beats">
+        <div class="beat" data-step="0">Over the last 12 months, wind and solar together supplied
+          <strong><span data-fill="renew">&hellip;</span></strong> of Germany's electricity.</div>
+        <div class="beat" data-step="1">And the mix is shifting fast &mdash; against the 12 months before,
+          <strong><span data-fill="shift">&hellip;</span></strong>.</div>
+        <div class="beat" data-step="2">Demand, by contrast, barely moves. Total load stays in a narrow
+          band all year, so it's the swinging supply that sets the tone.</div>
+      </div>
     </div>
     <div class="chapter-sticky">
       <div class="panel">
-        <h2>Daily generation mix &amp; load &mdash; the last 12 months</h2>
-        <p class="sub">Stacked: generation by fuel group (MWh/day). Line: total load.</p>
+        <h2>Generation mix &mdash; the last 12 months</h2>
+        <p class="sub">Stacked generation by fuel group, weekly mean (MWh/day).</p>
         <div id="chart-yearly-gen-load" class="chart" style="height:420px"></div>
         <button class="table-toggle" data-table-for="chart-yearly-gen-load">View data as table</button>
         <div class="data-table" id="table-chart-yearly-gen-load"></div>
@@ -65,13 +72,22 @@
     <h2>Prices</h2>
   </div>
   <div class="scroll-wrap">
-    <div class="chapter-copy">
+    <div class="chapter-copy" data-scene="yearly-price">
       <div class="narrative-box" id="narrative-price-yearly">Loading summary&hellip;</div>
-      <p>Every hourly DE-LU day-ahead price over the last 12 months.</p>
+      <div class="beats">
+        <div class="beat" data-step="0">Day-ahead power averaged
+          <strong><span data-fill="mean">&hellip;</span></strong> over the last 12 months.</div>
+        <div class="beat" data-step="1">But the average hides the real story &mdash; the swings. Each day's
+          low-to-high range is often enormous.</div>
+        <div class="beat" data-step="2">Prices even fell below zero in
+          <strong><span data-fill="neg">&hellip;</span></strong> &mdash; moments with more supply than the grid
+          could use.</div>
+      </div>
     </div>
     <div class="chapter-sticky">
       <div class="panel">
-        <h2>Hourly DE-LU price &mdash; the last 12 months</h2>
+        <h2>DE-LU price &mdash; the last 12 months</h2>
+        <p class="sub">Line: daily mean. Band: daily low to high (EUR/MWh).</p>
         <div id="chart-yearly-price" class="chart" style="height:340px"></div>
       </div>
     </div>
@@ -84,16 +100,19 @@
     <h2>Generation and load forecast</h2>
   </div>
   <div class="scroll-wrap">
-    <div class="chapter-copy">
+    <div class="chapter-copy" data-scene="forecast-gen-load">
       <div class="narrative-box" id="narrative-gen-load-forecast">Loading summary&hellip;</div>
-      <p>Each panel compares the last 7 days of actual national generation/load (gray) to the
-      forecast for tomorrow (blue), so any extreme forecast value stands out against recent
-      history.</p>
+      <div class="beats">
+        <div class="beat" data-step="0">Solar collapses to zero every night and peaks at midday. The
+          forecast has to nail that shape every single day.</div>
+        <div class="beat" data-step="1">For tomorrow, <strong><span data-fill="standout">&hellip;</span></strong>.</div>
+      </div>
     </div>
     <div class="chapter-sticky">
       <div class="panel">
         <h2>Wind, solar &amp; load &mdash; recent actual vs. tomorrow's forecast</h2>
-        <div id="chart-forecast-gen-load" class="chart" style="height:480px"></div>
+        <p class="sub">Each panel: last 7 days actual (gray) vs. tomorrow's forecast (blue).</p>
+        <div id="chart-forecast-gen-load" class="chart" style="height:440px"></div>
       </div>
     </div>
   </div>
@@ -105,36 +124,57 @@
     <h2>Price forecast</h2>
   </div>
   <div class="scroll-wrap">
-    <div class="chapter-copy">
+    <div class="chapter-copy" data-scene="forecast-price">
       <div class="narrative-box" id="narrative-price-driver">Loading summary&hellip;</div>
-      <p>The bar chart is a real SHAP (SHapley Additive exPlanations) decomposition of the
-      production ensemble's own prediction — a signed EUR/MWh contribution per category,
-      relative to the model's own baseline. It explains this specific model's reasoning, not
-      verified real-world market causality.</p>
+      <div class="beats">
+        <div class="beat" data-step="0">Here's what the model expects tomorrow's price to do, hour by hour.</div>
+        <div class="beat" data-step="1">The shaded band is its uncertainty &mdash; how sure the model is at
+          each hour. A wider band means a less certain call.</div>
+        <div class="beat" data-step="2">It leans most on <strong><span data-fill="drivers">&hellip;</span></strong>.
+          That's a SHAP decomposition of this model's own reasoning, not proven real-world cause.</div>
+      </div>
     </div>
     <div class="chapter-sticky">
       <div class="panel">
         <h2>24-hour price forecast</h2>
         <p class="sub">Line: forecast. Band: conformal prediction interval. Gray: last 7 days actual.</p>
-        <div id="chart-forecast-price" class="chart" style="height:340px"></div>
+        <div id="chart-forecast-price" class="chart" style="height:300px"></div>
       </div>
       <div class="panel">
         <h2>What's driving tomorrow's price forecast</h2>
         <p class="sub">Mean signed SHAP contribution per category across the 24 forecast hours.</p>
-        <div id="chart-shap" class="chart" style="height:340px"></div>
+        <div id="chart-shap" class="chart" style="height:300px"></div>
       </div>
     </div>
   </div>
 </section>
 
-<section class="cta-section chapter" id="history" data-chapter="history">
-  <h2>Want the longer story?</h2>
-  <p>
-    This page explains tomorrow. For how Germany's power market got this volatile in the first
-    place &mdash; a decade of prices, the 2022 gas shock, and the renewable rise &mdash; see the
-    historical story.
-  </p>
-  <a class="cta-button" href="../index.html">Read the history &rarr;</a>
+<section class="chapter" id="track-record" data-chapter="track-record">
+  <div class="chapter-head">
+    <p class="chapter-kicker">The track record</p>
+    <h2>How good is any of this?</h2>
+  </div>
+  <div class="scroll-wrap">
+    <div class="chapter-copy" data-scene="track-record">
+      <div class="narrative-box" id="narrative-track-record">Loading summary&hellip;</div>
+      <div class="beats">
+        <div class="beat" data-step="0">So how good is any of this? Over the last
+          <strong><span data-fill="window">&hellip;</span></strong>, the day-ahead price forecast was off by
+          <strong><span data-fill="mae">&hellip;</span></strong> on average.</div>
+        <div class="beat" data-step="1">Good enough to plan around &mdash; which is the whole point. For how
+          Germany's market got this volatile in the first place &mdash; a decade of prices, the 2022 gas
+          shock, the renewable rise &mdash; see the longer story.</div>
+      </div>
+      <a class="cta-button closing-cta" href="../index.html">Read the history &rarr;</a>
+    </div>
+    <div class="chapter-sticky">
+      <div class="panel">
+        <h2>Recent issued forecasts vs. what actually happened</h2>
+        <p class="sub">Blue: forecast issued the day before delivery. Gray: realised price. Band: prediction interval.</p>
+        <div id="chart-track-record" class="chart" style="height:360px"></div>
+      </div>
+    </div>
+  </div>
 </section>
 
 <footer class="story-footer">
@@ -151,54 +191,47 @@
 <script src="common.js"></script>
 <script src="forecast-story.js"></script>
 <script>
-// Nav highlighting + jump-to-chapter, driven by Scrollama step boundaries.
+// Nav: click-to-scroll + active-chapter highlight. Highlight is driven by an
+// IntersectionObserver over the chapter sections (independent of the beat
+// stepping below), so it stays correct in the hero and closing chapters too.
 const navLinks = document.querySelectorAll(".story-nav .nav-link");
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-const CHAPTERS = Array.from(navLinks).map((btn) => btn.dataset.chapter);
-let currentIndex = 0;
-
-function jumpTo(chapterId) {
-  const target = document.getElementById(chapterId);
-  if (!target) return;
-  target.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
-  currentIndex = CHAPTERS.indexOf(chapterId);
-  setActive(chapterId);
-}
 
 navLinks.forEach((btn) => {
-  btn.addEventListener("click", () => jumpTo(btn.dataset.chapter));
-});
-
-function setActive(chapterId) {
-  navLinks.forEach((el) => el.classList.toggle("active", el.dataset.chapter === chapterId));
-}
-
-const scroller = scrollama();
-scroller
-  .setup({ step: ".chapter", offset: 0.5 })
-  .onStepEnter((response) => {
-    const chapterId = response.element.dataset.chapter;
-    const idx = CHAPTERS.indexOf(chapterId);
-    if (idx !== -1) currentIndex = idx;
-    setActive(chapterId);
+  btn.addEventListener("click", () => {
+    document.getElementById(btn.dataset.chapter)
+      ?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
   });
-window.addEventListener("resize", scroller.resize);
-
-window.addEventListener("keydown", (e) => {
-  if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-  const tag = (e.target.tagName || "").toLowerCase();
-  if (tag === "input" || tag === "textarea" || e.target.isContentEditable) return;
-
-  let delta = 0;
-  if (e.key === "ArrowDown" || e.key === "ArrowRight") delta = 1;
-  else if (e.key === "ArrowUp" || e.key === "ArrowLeft") delta = -1;
-  else return;
-
-  const nextIndex = Math.min(CHAPTERS.length - 1, Math.max(0, currentIndex + delta));
-  if (nextIndex === currentIndex) return;
-  e.preventDefault();
-  jumpTo(CHAPTERS[nextIndex]);
 });
+
+const setActive = (chapterId) =>
+  navLinks.forEach((el) => el.classList.toggle("active", el.dataset.chapter === chapterId));
+
+const sectionObserver = new IntersectionObserver((entries) => {
+  entries.forEach((e) => { if (e.isIntersecting) setActive(e.target.dataset.chapter); });
+}, { rootMargin: "-45% 0px -45% 0px", threshold: 0 });
+document.querySelectorAll("section[data-chapter]").forEach((s) => sectionObserver.observe(s));
+
+// Sticky-graphic scrollytelling. Each beat drives its chapter's chart to a
+// visual state (SCENES/applyBeat live in forecast-story.js). Desktop only:
+// below 860px the charts are left in their final annotated state (see
+// registerScene) and the beats collapse to plain text under the chart — no
+// stepping, and the arrow-key chapter paging is gone entirely.
+const beatMedia = window.matchMedia("(max-width: 860px)");
+let scroller = null;
+if (!beatMedia.matches && document.querySelectorAll(".beat").length) {
+  scroller = scrollama();
+  scroller.setup({ step: ".beat", offset: 0.6 }).onStepEnter(({ element }) => {
+    document.querySelectorAll(".beat").forEach((b) => b.classList.remove("is-active"));
+    element.classList.add("is-active");
+    const scene = element.closest("[data-scene]")?.dataset.scene;
+    const step = parseInt(element.dataset.step, 10);
+    if (scene && window.SCENES && window.SCENES[scene] && Number.isFinite(step)) {
+      try { window.SCENES[scene].applyBeat(step); } catch (err) { console.warn("applyBeat", scene, err); }
+    }
+  });
+  window.addEventListener("resize", () => scroller.resize());
+}
 </script>
 </body>
 </html>

@@ -32,44 +32,181 @@ const SHAP_CATEGORY_LABELS = {
   calendar: "Calendar", other: "Other",
 };
 
+// ── Scrollytelling scene registry ──────────────────────────────────────
+// Each chart chapter registers a scene: the beat count and an applyBeat(step)
+// that drives its sticky chart to that beat's visual state. applyBeat is
+// idempotent — it sets the *full* state for `step`, so entering a beat from
+// either scroll direction lands the same. The inline scroll engine (index.html)
+// calls applyBeat on Scrollama step-enter; on mobile, stepping is disabled and
+// each scene is left in its final (fully-annotated) state.
+const SCENES = {};
+window.SCENES = SCENES;  // the inline scroll engine (index.html) reads this
+// Shared handoff for the price-forecast scene, whose two charts (price + SHAP)
+// are built by separate async functions; each populates its slice, then the
+// scene registers once both are ready.
+const sceneState = { "forecast-price": { priceReady: false, shapReady: false } };
+const isMobileWidth = () => window.matchMedia("(max-width: 860px)").matches;
+
+function registerScene(id, steps, applyBeat) {
+  SCENES[id] = { steps, applyBeat };
+  // Initial state: final beat on mobile (chart shown fully annotated), first
+  // beat on desktop (the story starts unrevealed and builds as you scroll).
+  try { applyBeat(isMobileWidth() ? steps - 1 : 0); } catch (e) { console.warn("scene init", id, e); }
+}
+
+/** Set a computed beat's text slot; hide the whole beat when `text` is null, so a
+ *  beat whose data is absent is dropped rather than showing a blank/undefined. */
+function fillBeat(scene, step, key, text) {
+  const beat = document.querySelector(`[data-scene="${scene}"] .beat[data-step="${step}"]`);
+  if (!beat) return;
+  if (text == null) { beat.hidden = true; return; }
+  beat.hidden = false;
+  const slot = key ? beat.querySelector(`[data-fill="${key}"]`) : null;
+  if (slot) slot.textContent = text;
+}
+
+/** The div, only if Plotly has drawn into it — so restyle/relayout can't throw
+ *  when a scene beat fires before its chart's async build has finished. */
+function plotted(id) { const d = document.getElementById(id); return d && d.data ? d : null; }
+
 // ── Chapter 2: yearly generation & load ────────────────────────────────
+
+/** Resample a daily gen/load record to weekly means (7-day blocks), so the year
+ *  reads as ~52 points instead of a 365-point hairball. Averaging within each
+ *  block keeps the "MWh/day" scale intact and comparable. Returns week-start
+ *  dates plus per-group and load weekly-mean arrays. Pure/testable. */
+function weeklyGenLoad(gl) {
+  const dates = gl.date || [];
+  const keys = GEN_GROUPS.map(g => g.key);
+  const out = { date: [], generation: {}, load: [] };
+  keys.forEach(k => { out.generation[k] = []; });
+  for (let start = 0; start < dates.length; start += 7) {
+    const end = Math.min(start + 7, dates.length);
+    out.date.push(dates[start]);
+    keys.forEach(k => { out.generation[k].push(meanOf((gl.generation?.[k] || []).slice(start, end))); });
+    out.load.push(meanOf((gl.load || []).slice(start, end)));
+  }
+  return out;
+}
 
 async function buildYearlyGenLoadChart() {
   const facts = await fetchJSON(YEARLY_DATA);
   if (!facts) return;
   const gl = facts.current_year.gen_load;
+  const wk = weeklyGenLoad(gl);
+  const genIdx = GEN_GROUPS.map((_, i) => i);
   const traces = GEN_GROUPS.map(g => ({
-    x: gl.date, y: gl.generation[g.key], name: g.label, type: "scatter", mode: "lines",
+    x: wk.date, y: wk.generation[g.key], name: g.label, type: "scatter", mode: "lines",
     stackgroup: "gen", line: { width: 0.5, color: cssVar(g.color) },
     fillcolor: hexToRgba(cssVar(g.color), 0.55),
   }));
+  // The load line is hidden by default (overlaying it on the stack invites the
+  // "gap = imports" misread) and fades in only on its dedicated beat.
   traces.push({
-    x: gl.date, y: gl.load, name: "Load", type: "scatter", mode: "lines",
-    line: { width: 2, color: cssVar("--orange") },
+    x: wk.date, y: wk.load, name: "Load", type: "scatter", mode: "lines",
+    line: { width: 2, color: cssVar("--orange") }, visible: false,
   });
+  const loadIdx = traces.length - 1;
   Plotly.newPlot("chart-yearly-gen-load", traces, baseLayout({
-    yaxis: Object.assign(baseLayout({}).yaxis, { title: "MWh/day" }),
+    yaxis: Object.assign(baseLayout({}).yaxis, { title: "MWh/day (weekly mean)" }),
     showlegend: true,
     legend: { orientation: "h", y: 1.12, x: 0 },
   }), plotConfig);
   renderTable("table-chart-yearly-gen-load",
-    ["Date", ...GEN_GROUPS.map(g => g.label), "Load"],
-    gl.date.map((d, i) => [d, ...GEN_GROUPS.map(g => gl.generation[g.key][i]), gl.load[i]]));
+    ["Week of", ...GEN_GROUPS.map(g => g.label), "Load"],
+    wk.date.map((d, i) => [d, ...GEN_GROUPS.map(g => Math.round(wk.generation[g.key][i])), Math.round(wk.load[i])]));
+
+  // Beats: 0 = renewable share, 1 = wind/coal shift (dim the rest), 2 = load reveal.
+  const mix = gl.fuel_mix_pct || {};
+  fillBeat("yearly-gen-load", 0, "renew",
+    (isNum(mix.wind) && isNum(mix.solar)) ? `${Math.round(mix.wind + mix.solar)}%` : null);
+  const prior = facts?.prior_year?.gen_load?.fuel_mix_pct;
+  const shifts = [];
+  if (prior) for (const key of ["wind", "coal"]) {
+    if (isNum(mix[key]) && isNum(prior[key])) {
+      const d = mix[key] - prior[key];
+      shifts.push(`${key} ${d >= 0 ? "up" : "down"} ${Math.abs(d).toFixed(1)} points`);
+    }
+  }
+  fillBeat("yearly-gen-load", 1, "shift", shifts.length ? shifts.join(" and ") : null);
+
+  const WIND = 0, COAL = 5;  // indices into GEN_GROUPS
+  registerScene("yearly-gen-load", 3, (step) => {
+    const div = plotted("chart-yearly-gen-load"); if (!div) return;
+    const fills = GEN_GROUPS.map((g, i) => {
+      const focused = step !== 1 || i === WIND || i === COAL;
+      return hexToRgba(cssVar(g.color), focused ? 0.55 : 0.12);
+    });
+    Plotly.restyle(div, { fillcolor: fills }, genIdx);
+    Plotly.restyle(div, { visible: step >= 2 }, [loadIdx]);
+  });
 }
 
 // ── Chapter 3: yearly prices ────────────────────────────────────────────
+
+/** Collapse hourly prices to per-day mean / min / max. The band between the daily
+ *  low and high is the day's price swing — the page's whole thesis — which the
+ *  8,760-point hourly smear buried. Returns parallel arrays. Pure/testable. */
+function dailyPriceBands(price) {
+  const ts = price?.timestamp || [];
+  const px = price?.price || [];
+  const byDay = new Map();
+  for (let i = 0; i < ts.length; i++) {
+    const v = px[i];
+    if (!isNum(v)) continue;
+    const day = (ts[i] || "").slice(0, 10);
+    if (!day) continue;
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day).push(v);
+  }
+  const date = [], mean = [], lo = [], hi = [];
+  for (const [day, vals] of byDay) {
+    date.push(day);
+    mean.push(meanOf(vals));
+    lo.push(Math.min(...vals));
+    hi.push(Math.max(...vals));
+  }
+  return { date, mean, lo, hi };
+}
 
 async function buildYearlyPriceChart() {
   const facts = await fetchJSON(YEARLY_DATA);
   if (!facts) return;
   const price = facts.current_year.price;
-  const trace = {
-    x: price.timestamp, y: price.price, type: "scattergl", mode: "lines",
-    line: { width: 1, color: cssVar("--blue") }, name: "DE-LU price",
-  };
-  Plotly.newPlot("chart-yearly-price", [trace], baseLayout({
+  const b = dailyPriceBands(price);
+  const bandColor = hexToRgba(cssVar("--blue"), 0.15);
+  // Trace order fixed for the scene: 0 = daily high (band anchor), 1 = daily low
+  // (fills up to the high), 2 = daily-mean line.
+  const traces = [
+    { x: b.date, y: b.hi, type: "scatter", mode: "lines", line: { width: 0 },
+      showlegend: false, hoverinfo: "skip", name: "Daily high" },
+    { x: b.date, y: b.lo, type: "scatter", mode: "lines", line: { width: 0 },
+      fill: "tonexty", fillcolor: bandColor, showlegend: false, hoverinfo: "skip", name: "Daily low" },
+    { x: b.date, y: b.mean, type: "scatter", mode: "lines",
+      line: { width: 1.5, color: cssVar("--blue") }, name: "Daily mean",
+      hovertemplate: "%{x}: €%{y:.0f}/MWh<extra></extra>" },
+  ];
+  Plotly.newPlot("chart-yearly-price", traces, baseLayout({
     yaxis: Object.assign(baseLayout({}).yaxis, { title: "EUR/MWh", zeroline: true, zerolinecolor: cssVar("--axis") }),
   }), plotConfig);
+
+  // Beats: 0 = mean line only, 1 = swing band fades in, 2 = mark the deepest trough.
+  fillBeat("yearly-price", 0, "mean", isNum(price.mean_price) ? `€${Math.round(price.mean_price)}/MWh` : null);
+  fillBeat("yearly-price", 2, "neg",
+    (isNum(price.negative_price_hours) && price.negative_price_hours > 0) ? `${price.negative_price_hours} hours` : null);
+  let troughX = null, troughY = null;
+  for (let i = 0; i < b.lo.length; i++) {
+    if (isNum(b.lo[i]) && (troughY === null || b.lo[i] < troughY)) { troughY = b.lo[i]; troughX = b.date[i]; }
+  }
+  const troughNote = (troughY !== null && troughY < 0) ? [{
+    x: troughX, y: troughY, text: `Low: €${Math.round(troughY)}/MWh`, showarrow: true, arrowhead: 3,
+    ax: 0, ay: -26, font: { size: 11, color: cssVar("--text-secondary") }, arrowcolor: cssVar("--axis"),
+  }] : [];
+  registerScene("yearly-price", 3, (step) => {
+    const div = plotted("chart-yearly-price"); if (!div) return;
+    Plotly.restyle(div, { visible: step >= 1 }, [0, 1]);
+    Plotly.relayout(div, { annotations: step >= 2 ? troughNote : [] });
+  });
 }
 
 // ── Templated narrative (deterministic; replaces the dormant Groq/LLM path) ──
@@ -167,6 +304,9 @@ async function buildForecastGenLoadCharts() {
     legend: { orientation: "h", y: 1.14, x: 0 },
   });
 
+  // Per-target deviation of tomorrow's forecast vs the recent 7-day actual mean,
+  // plus each target's subplot axis refs, so the standout beat can annotate it.
+  const series = [];
   for (let i = 0; i < GEN_LOAD_TARGETS.length; i++) {
     const t = GEN_LOAD_TARGETS[i];
     const forecast = await fetchJSON(`${DEPLOY_DATA}/gen_load/${t.key}_national.json`);
@@ -195,9 +335,37 @@ async function buildForecastGenLoadCharts() {
     const yKey = ya === "y" ? "yaxis" : ya.replace("y", "yaxis");
     layout[xKey] = { linecolor: cssVar("--axis"), gridcolor: "transparent" };
     layout[yKey] = { title: `${t.label} (${t.unit})`, linecolor: cssVar("--axis"), gridcolor: cssVar("--grid") };
+
+    const fMean = meanOf(forecast.forecasts.slice(0, 24).map(f => f.forecast));
+    const rMean = meanOf(actualDays.slice(-7).flatMap(d => d.values ?? []));
+    series.push({
+      label: t.label, axisSuffix: i === 0 ? "" : String(i + 1),
+      pct: (isNum(fMean) && isNum(rMean) && rMean !== 0) ? (fMean - rMean) / rMean * 100 : null,
+    });
   }
 
   Plotly.newPlot("chart-forecast-gen-load", traces, layout, plotConfig);
+
+  // Standout beat: biggest non-Load deviation ≥5% (else Load if ≥5%, else "all calm").
+  const dev = series.filter(s => isNum(s.pct));
+  const nonLoad = dev.filter(s => s.label !== "Load").sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct));
+  let standout = (nonLoad.length && Math.abs(nonLoad[0].pct) >= 5) ? nonLoad[0] : null;
+  if (!standout) { const load = dev.find(s => s.label === "Load"); if (load && Math.abs(load.pct) >= 5) standout = load; }
+  const standoutText = standout
+    ? `${standout.label.toLowerCase()} looks ${describeDeviation(standout.pct)} this week's average`
+    : (dev.length ? "wind, solar and load all sit close to their recent averages" : null);
+  fillBeat("forecast-gen-load", 1, "standout", standoutText);
+
+  const note = standout ? [{
+    xref: `x${standout.axisSuffix} domain`, yref: `y${standout.axisSuffix} domain`,
+    x: 0.5, y: 1, yanchor: "bottom", showarrow: false,
+    text: `${describeDeviation(standout.pct)} recent average`,
+    font: { size: 11, color: cssVar("--orange") },
+  }] : [];
+  registerScene("forecast-gen-load", 2, (step) => {
+    const div = plotted("chart-forecast-gen-load"); if (!div) return;
+    Plotly.relayout(div, { annotations: step >= 1 ? note : [] });
+  });
 }
 
 // ── Chapter 5: price forecast + SHAP drivers ───────────────────────────
@@ -220,10 +388,14 @@ async function buildForecastPriceChart() {
   const fx = forecast.forecasts.map(f => f.timestamp);
   const lower = forecast.forecasts.map(f => f.forecast_lower);
   const upper = forecast.forecasts.map(f => f.forecast_upper);
+  let bandIdx = null;
   if (lower.some(v => v !== undefined)) {
+    const u = traces.length;
     traces.push({ x: fx, y: upper, type: "scatter", mode: "lines", line: { width: 0 }, showlegend: false, hoverinfo: "skip" });
+    const l = traces.length;
     traces.push({ x: fx, y: lower, type: "scatter", mode: "lines", line: { width: 0 }, fill: "tonexty",
       fillcolor: hexToRgba(cssVar("--blue"), 0.15), showlegend: false, hoverinfo: "skip" });
+    bandIdx = [u, l];
   }
   traces.push({
     x: fx, y: forecast.forecasts.map(f => f.forecast), name: "Forecast", type: "scatter", mode: "lines",
@@ -235,6 +407,27 @@ async function buildForecastPriceChart() {
     showlegend: true,
     legend: { orientation: "h", y: 1.12, x: 0 },
   }), plotConfig);
+
+  Object.assign(sceneState["forecast-price"], { priceReady: true, bandIdx });
+  tryRegisterForecastPrice();
+}
+
+/** Register the price-forecast scene once both its charts (price + SHAP) exist.
+ *  Beats: 0 = forecast line only, 1 = PI band fades in, 2 = highlight the top
+ *  SHAP driver. Each half degrades independently if its data was missing. */
+function tryRegisterForecastPrice() {
+  const st = sceneState["forecast-price"];
+  if (!st.priceReady || !st.shapReady) return;
+  registerScene("forecast-price", 3, (step) => {
+    const pdiv = plotted("chart-forecast-price");
+    if (pdiv && st.bandIdx) Plotly.restyle(pdiv, { visible: step >= 1 }, st.bandIdx);
+    const sdiv = plotted("chart-shap");
+    if (sdiv && st.shapCount) {
+      const op = new Array(st.shapCount).fill(1);
+      if (step >= 2) { op.fill(0.3); op[st.shapTopIdx] = 1; }
+      Plotly.restyle(sdiv, { "marker.opacity": [op] });
+    }
+  });
 }
 
 async function buildShapChart() {
@@ -261,6 +454,15 @@ async function buildShapChart() {
     margin: { l: 140, r: 16, t: 8, b: 40 },
     xaxis: Object.assign(baseLayout({}).xaxis, { title: "Mean signed contribution (EUR/MWh)", zeroline: true, zerolinecolor: cssVar("--axis") }),
   }), plotConfig);
+
+  // Top driver = largest |contribution|; bars are sorted ascending, so it's last.
+  const top = order.slice().reverse().slice(0, 2).map(o =>
+    `${SHAP_CATEGORY_LABELS[o.c] ?? o.c} (${o.v >= 0 ? "+" : "−"}${Math.abs(o.v).toFixed(1)} €/MWh)`);
+  fillBeat("forecast-price", 2, "drivers", top.length ? top.join(" and ") : null);
+  Object.assign(sceneState["forecast-price"], {
+    shapReady: true, shapCount: order.length, shapTopIdx: order.length - 1,
+  });
+  tryRegisterForecastPrice();
 }
 
 /** Gen/load forecast note. `series` is [{label, unit, fMean, rMean, pct}] where
@@ -341,6 +543,67 @@ async function loadForecastNarrative() {
   renderTemplated("narrative-price-driver", forecastPriceDriverSentence(shap));
 }
 
+// ── Chapter 6: track record (closing) ──────────────────────────────────
+
+/** Closing summary from errors_summary.json (rolling daily MAE/RMSE). Pure. */
+function trackRecordSentence(errors) {
+  const mae = meanOf(errors?.mae);
+  if (!isNum(mae)) return null;
+  const n = Array.isArray(errors?.dates) ? errors.dates.length : null;
+  const rmse = meanOf(errors?.rmse);
+  let s = `Over the last ${n ? `${n} days` : "week"}, the day-ahead price forecast was off ` +
+    `by about €${Math.round(mae)}/MWh on average`;
+  if (isNum(rmse)) s += ` (RMSE €${Math.round(rmse)})`;
+  return s + ". Good enough to plan around — which is the whole point.";
+}
+
+async function buildTrackRecordChart() {
+  const errors = await fetchJSON(`${DEPLOY_DATA}/errors_summary.json`);
+  const maeMean = meanOf(errors?.mae);
+  const nDays = Array.isArray(errors?.dates) ? errors.dates.length : null;
+  fillBeat("track-record", 0, "window", nDays ? `${nDays} days` : null);
+  fillBeat("track-record", 0, "mae", isNum(maeMean) ? `about €${Math.round(maeMean)}/MWh` : null);
+  renderTemplated("narrative-track-record", trackRecordSentence(errors));
+
+  const hist = await fetchJSON(`${DEPLOY_DATA}/forecast_history.json`);
+  if (!hist?.forecasts?.length) return;
+  const actuals = await fetchJSON(`${DEPLOY_DATA}/actuals.json`);
+
+  // Concatenate the issued forecasts (each a 24h delivery day) into one track.
+  const fx = [], fy = [], flo = [], fhi = [];
+  const issues = hist.forecasts.slice().sort((a, b) => (a.issued_at > b.issued_at ? 1 : -1));
+  for (const iss of issues) {
+    for (const p of (iss.forecasts || [])) {
+      fx.push(p.timestamp); fy.push(p.forecast); flo.push(p.forecast_lower); fhi.push(p.forecast_upper);
+    }
+  }
+  // Realised prices for exactly those delivery dates, overlaid.
+  const dates = [...new Set(fx.map(t => (t || "").slice(0, 10)))];
+  const dayMap = new Map((actuals?.days || []).map(d => [d.date, d.prices]));
+  const ax = [], ay = [];
+  for (const date of dates) {
+    const prices = dayMap.get(date);
+    if (!prices) continue;
+    prices.forEach((v, h) => { ax.push(`${date}T${String(h).padStart(2, "0")}:00`); ay.push(v); });
+  }
+
+  const traces = [];
+  if (ax.length) traces.push({ x: ax, y: ay, name: "Realised", type: "scatter", mode: "lines",
+    line: { width: 1.5, color: cssVar("--gray-context") } });
+  if (fhi.some(v => isNum(v))) {
+    traces.push({ x: fx, y: fhi, type: "scatter", mode: "lines", line: { width: 0 }, showlegend: false, hoverinfo: "skip" });
+    traces.push({ x: fx, y: flo, type: "scatter", mode: "lines", line: { width: 0 }, fill: "tonexty",
+      fillcolor: hexToRgba(cssVar("--blue"), 0.15), showlegend: false, hoverinfo: "skip" });
+  }
+  traces.push({ x: fx, y: fy, name: "Forecast (issued day before)", type: "scatter", mode: "lines",
+    line: { width: 2, color: cssVar("--blue") } });
+
+  Plotly.newPlot("chart-track-record", traces, baseLayout({
+    yaxis: Object.assign(baseLayout({}).yaxis, { title: "EUR/MWh" }),
+    showlegend: true, legend: { orientation: "h", y: 1.12, x: 0 },
+  }), plotConfig);
+}
+
 buildYearlyGenLoadChart();
 buildYearlyPriceChart();
 loadYearlyNarrative();
@@ -348,3 +611,4 @@ buildForecastGenLoadCharts();
 buildForecastPriceChart();
 buildShapChart();
 loadForecastNarrative();
+buildTrackRecordChart();
