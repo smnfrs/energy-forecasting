@@ -398,7 +398,7 @@
 
   function renderGenLoadSummary(genLoad, glActuals) {
     const el = document.getElementById("summary-chart");
-    const { wo, woff, sol, load } = genLoad || {};
+    const { wo, woff, sol, load, gld } = genLoad || {};
 
     if (!wo && !woff && !sol && !load) {
       showNoData(el, "no_gen_load_data"); return;
@@ -428,21 +428,23 @@
       actualStackCount++;
     }
 
-    // ── Forecast "other generation" = load − wind_onshore − wind_offshore − solar ──
-    // Mirrors the actual series built by write_gen_load_actuals. We deliberately do
-    // NOT use the gen_load_diff model output here: that target is (total generation −
-    // load), a net-balance quantity that is mostly negative and would drag the stack
-    // far below load. Deriving the residual from the per-source forecasts keeps the
-    // forecast stack consistent with the actual stack (both decompose load).
+    // ── Forecast "other generation" = total generation − wind − solar ──
+    // Total generation is the genuine forecast load + gen_load_diff (the model target
+    // is gen − load), so the generation stack tops at forecast total generation and
+    // differs from the load line by the forecast net export/import — instead of being
+    // pinned to load. Mirrors the actual "other generation" written by
+    // write_gen_load_actuals (sum of the non-wind/solar generation types).
     let otherGenFc = null;
-    if (load && wo && woff && sol) {
+    if (load && wo && woff && sol && gld) {
       const asMap = d => new Map(d.forecasts.map(f => [f.timestamp, f.forecast]));
-      const woM = asMap(wo), woffM = asMap(woff), solM = asMap(sol);
+      const woM = asMap(wo), woffM = asMap(woff), solM = asMap(sol), gldM = asMap(gld);
       const rows = load.forecasts
         .map(f => {
-          const w = woM.get(f.timestamp), o = woffM.get(f.timestamp), s = solM.get(f.timestamp);
-          if (w == null || o == null || s == null) return null;
-          return { timestamp: f.timestamp, forecast: f.forecast - w - o - s };
+          const w = woM.get(f.timestamp), o = woffM.get(f.timestamp),
+                s = solM.get(f.timestamp), g = gldM.get(f.timestamp);
+          if (w == null || o == null || s == null || g == null) return null;
+          // total generation (load + gen_load_diff) minus renewables
+          return { timestamp: f.timestamp, forecast: (f.forecast + g) - w - o - s };
         })
         .filter(Boolean);
       if (rows.length) otherGenFc = { forecasts: rows };
@@ -468,18 +470,20 @@
       });
     }
 
-    // ── Load actual (solid red line, y2) ──
+    // ── Load actual (solid red line) ──
+    // Load shares the generation axis so total generation and load are directly
+    // comparable: the gap between the generation stack and the load line is net
+    // export/import, which is the whole point of the comparison.
     const loadActual = buildActualSeries(glActuals, "load");
     if (loadActual.xs.length) {
       traces.push({
         x: loadActual.xs, y: loadActual.ys, type: "scatter", mode: "lines",
         name: `${t("load")} (${t("actual")})`,
-        yaxis: "y2",
         line: { color: "#EE0000", width: 2.5 },
       });
     }
 
-    // ── Load forecast (dashed red line, y2) ──
+    // ── Load forecast (dashed red line) ──
     // Trim to hours strictly after the last actual, then bridge with one
     // connecting point so the dashed line starts exactly where the solid line ends.
     if (load) {
@@ -497,17 +501,15 @@
         y: lastActY != null ? [lastActY, ...fcYs.slice(fcStartIdx)] : fcYs.slice(fcStartIdx),
         type: "scatter", mode: "lines",
         name: `${t("load")} (${t("forecast")})`,
-        yaxis: "y2",
         line: { color: "#EE0000", width: 1.5, dash: "dash" },
       });
     }
 
     Plotly.newPlot(el, traces, {
       xaxis: { type: "date", title: "" },
-      yaxis: { title: "MW (Generation)", rangemode: "tozero" },
-      yaxis2: { title: `MW (${t("load")})`, overlaying: "y", side: "right", rangemode: "tozero" },
+      yaxis: { title: "MW", rangemode: "tozero" },
       legend: { orientation: "h", y: -0.28 },
-      margin: { t: 20, r: 80, b: 100, l: 65 },
+      margin: { t: 20, r: 20, b: 100, l: 65 },
       height: 380,
     }, { responsive: true, displayModeBar: false });
   }
@@ -805,7 +807,7 @@
     }, { responsive: true, displayModeBar: false });
   }
 
-  // Hourly error profile: average MAE/RMSE per hour-of-day over last 30 days
+  // Hourly error profile: average ME (bias), MAE and RMSE per hour-of-day.
   function renderHourlyErrorProfile(actuals, history) {
     const el = document.getElementById("hourly-error-chart");
     if (!el) return;
@@ -816,6 +818,7 @@
       if (day.prices && day.prices.length === 24) actualsMap[day.date] = day.prices;
     }
 
+    const meSums   = new Array(24).fill(0);
     const maeSums  = new Array(24).fill(0);
     const rmseSums = new Array(24).fill(0);
     const counts   = new Array(24).fill(0);
@@ -824,7 +827,8 @@
       const act = actualsMap[e.date];
       if (!act || e.prices.length < 24) continue;
       for (let h = 0; h < 24; h++) {
-        const err = e.prices[h] - act[h];
+        const err = e.prices[h] - act[h]; // signed: + = forecast too high
+        meSums[h]   += err;
         maeSums[h]  += Math.abs(err);
         rmseSums[h] += err * err;
         counts[h]   += 1;
@@ -832,6 +836,7 @@
     }
 
     const hours = Array.from({ length: 24 }, (_, h) => h);
+    const meByHour   = hours.map(h => counts[h] ? Math.round(meSums[h]   / counts[h] * 100) / 100 : null);
     const maeByHour  = hours.map(h => counts[h] ? Math.round(maeSums[h]  / counts[h] * 100) / 100 : null);
     const rmseByHour = hours.map(h => counts[h] ? Math.round(Math.sqrt(rmseSums[h] / counts[h]) * 100) / 100 : null);
     const nDays = Math.max(...counts);
@@ -849,11 +854,16 @@
         name: t("rmse"),
         line: { color: "#ef4444", width: 2 },
         marker: { size: 5 },
-        yaxis: "y",
+      },
+      {
+        x: hours, y: meByHour, type: "scatter", mode: "lines+markers",
+        name: t("me"),
+        line: { color: "#10b981", width: 2, dash: "dot" },
+        marker: { size: 5 },
       },
     ], {
       xaxis: { title: "Hour of day (UTC)", dtick: 2, tick0: 0 },
-      yaxis: { title: "EUR/MWh" },
+      yaxis: { title: "EUR/MWh", zeroline: true, zerolinecolor: "#bbb", zerolinewidth: 1 },
       legend: { orientation: "h", y: -0.2 },
       margin: { t: 20, r: 20, b: 60, l: 65 },
       height: 240,

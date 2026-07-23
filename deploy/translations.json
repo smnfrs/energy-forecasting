@@ -29,6 +29,7 @@
     "last_updated": "Last updated",
     "mae": "MAE",
     "rmse": "RMSE",
+    "me": "ME (bias)",
     "unit": "EUR/MWh",
     "forecast": "Forecast",
     "actual": "Actual",
@@ -48,7 +49,7 @@
     "tab_prices": "Prices",
     "tab_gen_load": "Generation & Load",
     "tab_monitoring": "Monitoring",
-    "other_gen": "Other Gen, Grid Losses & Exports",
+    "other_gen": "Other Generation",
     "nav_story": "The Story",
     "feature_audit_title": "Deployment Feature Audit"
   },
@@ -82,6 +83,7 @@
     "last_updated": "Zuletzt aktualisiert",
     "mae": "MAE",
     "rmse": "RMSE",
+    "me": "ME (Bias)",
     "unit": "EUR/MWh",
     "forecast": "Prognose",
     "actual": "Tatsächlich",
@@ -101,7 +103,7 @@
     "tab_prices": "Preise",
     "tab_gen_load": "Erzeugung & Last",
     "tab_monitoring": "Monitoring",
-    "other_gen": "Sonst. Erzeugung, Netzverluste & Exporte",
+    "other_gen": "Sonstige Erzeugung",
     "nav_story": "Die Story",
     "feature_audit_title": "Deployment Feature-Audit"
   }

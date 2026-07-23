@@ -567,15 +567,25 @@ def write_gen_load_actuals() -> None:
         if complete:
             result[target] = {"days": complete}
 
-    # gen_load_diff actuals = load − wind_onshore − wind_offshore − solar
-    # Represents dispatchable/other generation; may be negative during high renewables.
-    _renewables = ["wind_onshore", "wind_offshore", "solar"]
-    if "load" in _berlin_combined and all(t in _berlin_combined for t in _renewables):
-        ref = _berlin_combined["load"]
-        gld = ref.copy()
-        for t in _renewables:
-            gld = gld.sub(_berlin_combined[t].reindex(ref.index, fill_value=0))
-        complete = _series_to_days(gld)
+    # "Other generation" actuals = every generation type that is not wind/solar
+    # (biomass, gas, coal, lignite, hydro, pumped storage, other conv/renew), summed
+    # across TSOs. Stacked with the renewables above, the generation total tops at
+    # real total generation — which differs from load by net exports/imports — rather
+    # than being forced to equal load (as load − renewables would). The forecast side
+    # mirrors this as load + gen_load_diff − renewables (gen_load_diff = gen − load).
+    _OTHER_GEN_PREFIXES = [
+        "biomass", "gas", "hard_coal", "lignite",
+        "pumped_storage", "hydro", "other_renew", "other_conv",
+    ]
+    other_gen_parts = []
+    for tso_name, tdf in tso_dfs.items():
+        suffix = _TSO_COL_SUFFIX[tso_name]
+        cols = [f"{p}{suffix}" for p in _OTHER_GEN_PREFIXES if f"{p}{suffix}" in tdf.columns]
+        if cols:
+            other_gen_parts.append(tdf[cols].sum(axis=1, min_count=1))
+    if other_gen_parts:
+        other_gen = _to_berlin(pd.concat(other_gen_parts, axis=1).sum(axis=1, min_count=1))
+        complete = _series_to_days(other_gen)
         if complete:
             result["gen_load_diff"] = {"days": complete}
 
