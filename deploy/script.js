@@ -535,10 +535,26 @@
       const tsoColor = isNational ? cfg.color : (TSO_COLORS[tso] || "#888888");
       const forecasts = data.forecasts || [];
       const ts    = forecasts.map(f => toBerlinLocalStr(f.timestamp));
-      const ys    = forecasts.map(f => f.forecast);
       const lower = forecasts.map(f => f.forecast_lower ?? null);
       const upper = forecasts.map(f => f.forecast_upper ?? null);
       const hasPI = isNational && lower.some(v => v !== null);
+
+      // For the national line, splice the model's past predictions (hindcast)
+      // onto the front of the future forecast so past and future read as ONE
+      // continuous forecast line (single legend entry), instead of a separate
+      // past-forecast line that leaves a gap at "now". The PI band and the
+      // per-TSO toggles still use the future forecast only.
+      let lineTs = ts, lineYs = forecasts.map(f => f.forecast);
+      if (isNational) {
+        const hc = (glHindcast && glHindcast[cfg.target]) || [];
+        const futSet = new Set(forecasts.map(f => f.timestamp));
+        const merged = [
+          ...hc.filter(d => !futSet.has(d.timestamp)).map(d => ({ ts: d.timestamp, y: d.forecast })),
+          ...forecasts.map(f => ({ ts: f.timestamp, y: f.forecast })),
+        ].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+        lineTs = merged.map(m => toBerlinLocalStr(m.ts));
+        lineYs = merged.map(m => m.y);
+      }
 
       const startIdx = traces.length;
       if (hasPI) {
@@ -555,8 +571,10 @@
         });
       }
       traces.push({
-        x: ts, y: ys, type: "scatter", mode: "lines",
-        name: cfg.tsoLabels[tso] || tso,
+        x: lineTs, y: lineYs, type: "scatter", mode: "lines",
+        name: isNational
+          ? `${cfg.tsoLabels[tso] || tso} (${t("forecast")})`
+          : (cfg.tsoLabels[tso] || tso),
         line: { color: tsoColor, width: isNational ? 2 : 1.5, dash: "dash" },
         visible: isNational,
       });
@@ -573,30 +591,17 @@
       controls.appendChild(label);
     }
 
-    // Hindcast: model's past predictions for the same period as actuals.
-    // Comes from gen_load_hindcast.json (last 7 days of historical_forecasts parquet).
-    // Shown as dashed line so it can be visually compared against the solid actuals.
-    const hindcastStartIdx = traces.length;
-    if (glHindcast && glHindcast[cfg.target] && glHindcast[cfg.target].length) {
-      const hc = glHindcast[cfg.target];
-      traces.push({
-        x: hc.map(d => toBerlinLocalStr(d.timestamp)),
-        y: hc.map(d => d.forecast),
-        type: "scatter", mode: "lines",
-        name: `${cfg.tsoLabels["national"] || "National"} (${t("forecast")})`,
-        line: { color: cfg.color, width: 1.5, dash: "dash" },
-      });
-    }
-    const hasHindcastTrace = traces.length > hindcastStartIdx;
+    // (The model's past predictions / hindcast are spliced onto the national
+    // forecast line above, so there is no separate past-forecast trace here.)
 
     // Actuals overlay: solid line (national aggregate)
     const actualsStartIdx = traces.length;
     if (glActuals && glActuals[cfg.target]) {
       const { xs, ys } = buildActualSeries(glActuals, cfg.target);
       if (xs.length) {
-        // Neutral grey (not cfg.color) so the coloured dashed forecast and hindcast
-        // lines stay legible where the actuals overlap them, mirroring the price
-        // history chart (actual = grey, forecast = coloured).
+        // Neutral grey (not cfg.color) so the coloured dashed forecast line stays
+        // legible where the actuals overlap it, mirroring the price history chart
+        // (actual = grey, forecast = coloured).
         traces.push({
           x: xs, y: ys, type: "scatter", mode: "lines",
           name: `${cfg.tsoLabels["national"] || "National"} (${t("actual")})`,
@@ -639,7 +644,6 @@
           const show = checkedTSOs.has(tso);
           for (let i = startIdx; i < endIdx; i++) vis[i] = show;
         }
-        if (hasHindcastTrace) vis[hindcastStartIdx] = checkedTSOs.has("national");
         if (hasActualsTrace) vis[actualsStartIdx] = true;
         Plotly.restyle(chartDiv, { visible: vis });
       });
