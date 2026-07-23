@@ -2,6 +2,15 @@
 
 Merging two repos — `energy_prices` (EP) and `energy_market_analysis` (EMA) — into a single codebase for day-ahead electricity price and generation/load forecasting for the German energy market.
 
+## Domain gotchas
+
+**`gen_load_diff` = total_generation − total_load** (`modeling/gen_load.py`), i.e. the **net balance = net exports + grid losses**. It is a SMALL, ± quantity (recently ≈ −2.6 GW, often a slight net import), *not* "everything apart from renewables". Confirmed by `forecast_inputs.py`: `forecast_gen_total = forecast_load + gen_load_diff`. This has caused repeated bugs — people assume it's the ~24 GW residual. It is not:
+- **residual load** = load − renewables ≈ 24 GW (large, positive)
+- **non-renewable generation** = total_gen − renewables ≈ 21 GW (large, positive)
+- **gen_load_diff** = gen − load ≈ −2.6 GW (small, ±)
+
+On the dashboard, the "Other Generation" band is **total_gen − renewables** — actual = summed non-renewable generation types from the TSO parquets; forecast = `(load + gen_load_diff) − renewables`. `renewables + other ≈ load` but off by the net balance (never exactly equal). Do NOT stack raw `gen_load_diff` as the other-generation band.
+
 ## Git
 
 Write commit messages the way a person would: a plain, capitalised sentence describing what the commit does, e.g. "Created new story dashboard site" or "Template the forecast-story narrative and retire the LLM path". Do **not** use Conventional Commits prefixes (`fix(...)`, `feat(...)`, `ci(...)`, etc.) or lower-case type codes. One clear sentence is enough; add a short body only when the change genuinely needs explaining. Never add `Co-Authored-By` trailers.
