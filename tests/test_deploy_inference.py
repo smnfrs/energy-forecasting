@@ -72,3 +72,36 @@ def test_run_inference_price_checks_coverage_before_price(monkeypatch):
         "validate",
         "write_all",
     ]
+
+
+def test_aggregate_national_preserves_nan_for_missing_tso_hours():
+    """A TSO whose forecast horizon is shorter (weather/exog tailed off) must not
+    zero-pad the national total — the uncovered hours are NaN, and hours every TSO
+    covers sum correctly."""
+    import numpy as np
+    import pandas as pd
+
+    from energy_forecasting.config.modeling import GEN_LOAD_TARGETS
+    from energy_forecasting.deploy import gen_load_inference as gli
+
+    regions = GEN_LOAD_TARGETS["load"]["regions"]
+    idx = pd.date_range("2026-07-24", periods=48, freq="h", tz="UTC")
+
+    results = {}
+    for i, region in enumerate(regions):
+        # One TSO stops 6 hours early, as if its exog forecast tailed off to NaN.
+        end = len(idx) - 6 if i == 0 else len(idx)
+        results[("load", region)] = pd.DataFrame(
+            {"y_pred": 10_000.0, "y_lower": 9_000.0, "y_upper": 11_000.0},
+            index=idx[:end],
+        )
+
+    national = gli.aggregate_national(results)
+    agg = national[("load", "DE_NATIONAL")]
+
+    n_tso = len(regions)
+    # Hours every TSO covers: real sum, not a fraction.
+    assert agg["y_pred"].iloc[0] == 10_000.0 * n_tso
+    # Hours the short TSO misses: NaN, never a collapsed-low number.
+    assert np.isnan(agg["y_pred"].iloc[-1])
+    assert (agg["y_pred"].iloc[-6:]).isna().all()

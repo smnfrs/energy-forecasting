@@ -471,7 +471,12 @@ def aggregate_national(
         all_idx = frames[0].index
         for df in frames[1:]:
             all_idx = all_idx.union(df.index)
-        agg = sum(df.reindex(all_idx, fill_value=0) for df in frames)
+        # NaN-preserving: reindex without a fill so any hour a TSO doesn't cover is
+        # NaN, and the element-wise sum propagates it (equivalent to min_count=len).
+        # Never zero-fill — a short per-TSO horizon (trimmed in _infer_one when a
+        # weather/exog forecast tails off) would otherwise collapse the national
+        # total to a fraction of its real value at the horizon edge.
+        agg = sum(df.reindex(all_idx) for df in frames)
         # Cap to expected forecast window (TSO with more-current data may add 1 extra hour)
         if len(agg) > DEFAULT_FORECAST_HORIZON:
             agg = agg.iloc[:DEFAULT_FORECAST_HORIZON]

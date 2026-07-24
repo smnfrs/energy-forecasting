@@ -67,9 +67,9 @@ _TSO_COL_SUFFIX: dict[str, str] = {
 # Per-target list of TSO parquets that contribute to national sum.
 # Must match GEN_LOAD_TARGETS regions in config/modeling.py.
 _TARGET_TSO_FILES: dict[str, list[str]] = {
-    "wind_onshore": ["50Hertz", "Amprion", "TenneT", "TransnetBW"],
+    "wind_onshore": ["50Hertz", "Amprion", "TenneT", "TransnetBW", "Creos"],
     "wind_offshore": ["50Hertz", "TenneT"],
-    "solar": ["50Hertz", "Amprion", "TenneT", "TransnetBW"],
+    "solar": ["50Hertz", "Amprion", "TenneT", "TransnetBW", "Creos"],
     "load": ["50Hertz", "Amprion", "TenneT", "TransnetBW", "Creos"],
 }
 
@@ -553,8 +553,10 @@ def write_gen_load_actuals() -> None:
         if not series_list:
             continue
 
-        # Outer join and sum — missing TSO-hours contribute 0
-        combined = pd.concat(series_list, axis=1).sum(axis=1, min_count=1)
+        # Outer join and sum, requiring every TSO to report — an hour missing any
+        # TSO becomes NaN (dropped by _series_to_days) rather than under-summing to
+        # an artificial dip when a TSO reports late.
+        combined = pd.concat(series_list, axis=1).sum(axis=1, min_count=len(series_list))
 
         # Convert to Berlin local time for delivery-hour date grouping.
         # TSO parquets are UTC; tz-naive parquets are also assumed UTC.
@@ -584,7 +586,9 @@ def write_gen_load_actuals() -> None:
         if cols:
             other_gen_parts.append(tdf[cols].sum(axis=1, min_count=1))
     if other_gen_parts:
-        other_gen = _to_berlin(pd.concat(other_gen_parts, axis=1).sum(axis=1, min_count=1))
+        other_gen = _to_berlin(
+            pd.concat(other_gen_parts, axis=1).sum(axis=1, min_count=len(other_gen_parts))
+        )
         complete = _series_to_days(other_gen)
         if complete:
             result["gen_load_diff"] = {"days": complete}
@@ -659,7 +663,7 @@ def write_gen_load_errors() -> None:
                 series_list.append(tso_dfs[tso][col].dropna())
         if not series_list:
             continue
-        actuals = pd.concat(series_list, axis=1).sum(axis=1, min_count=1)
+        actuals = pd.concat(series_list, axis=1).sum(axis=1, min_count=len(series_list))
         idx = actuals.index
         if hasattr(idx, "tz") and idx.tz is not None:
             actuals.index = idx.tz_convert("UTC")
@@ -701,8 +705,10 @@ def write_gen_load_errors() -> None:
             )
             .query("n == 24")
             .drop(columns="n")
-            .tail(30)
         )
+        # Floor out the pre-July OOF/backfill rows (25 Jun was clearly broken) and
+        # window to the last 14 days so the monitoring chart stays readable.
+        daily = daily[daily.index >= "2026-07-01"].tail(14)
         if daily.empty:
             continue
         result[target] = {
