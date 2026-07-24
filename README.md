@@ -1,6 +1,6 @@
 # Energy Forecasting — predicting Germany's electricity prices from the weather
 
-**[▶ Live dashboard](https://smnfrs.github.io/energy-forecasting/)**  ·  **[AI-narrated daily forecast](https://smnfrs.github.io/energy-forecasting/story/forecast/)**
+**[▶ Live dashboard](https://smnfrs.github.io/energy-forecasting/)**  ·  **[Explanation](https://smnfrs.github.io/energy-forecasting/story/forecast/)**
 
 <!-- TODO: Add a screenshot of the live dashboard right here. For non-technical readers this is the single most useful addition — it shows the finished product in one glance. Suggested: ![Dashboard](assets/dashboard.png) -->
 
