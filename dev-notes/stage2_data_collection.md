@@ -1628,7 +1628,7 @@ data/raw/
 ```
 
 **Notes:**
-- Creos is excluded from weather (Luxembourg has negligible generation in our scope; EMA doesn't collect weather for it).
+- Creos (Luxembourg) weather IS collected (onshore/solar/cities dirs exist), matching EMA. Its generation is small (~35 MW wind, ~24 MW solar) but modelled per-region for wind_onshore, solar and load, so it contributes to the national wind/PV totals rather than falling into "other generation".
 - Offshore weather for TenneT (5 farms) and 50Hertz (2 farms: Wikinger, Arkona). Amprion and TransnetBW have no offshore capacity.
 - SMARD `tso/` subdirectory separates per-TSO files from national files to avoid confusion.
 - Each weather Parquet has columns like `temperature_2m_city_berlin`, `wind_speed_100m_won_hueselitz` — variable name + location suffix.

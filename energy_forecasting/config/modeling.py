@@ -88,9 +88,15 @@ ENSEMBLE_METHODS = [
 # ── Gen/load targets ──────────────────────────────────────────────
 # Training order matters: load uses wind/solar forecasts as features,
 # gen_load_diff uses wind/solar/load. See GEN_LOAD_TRAINING_ORDER.
+#
+# EMA fidelity: upstream EMA models Luxembourg (Creos / DE_CREOS) per-region for
+# wind_onshore, solar AND load (eu_locations.py LU_CREOS available_targets). The
+# merge originally dropped Creos from wind_onshore/solar, so LU's small renewable
+# generation (~35 MW wind, ~24 MW solar) fell into the "other generation" band
+# instead of wind/PV. It is restored here. gen_load_diff stays national-only.
 GEN_LOAD_TARGETS = {
     "wind_onshore": {
-        "regions": ["DE_50HZ", "DE_AMPRION", "DE_TENNET", "DE_TRANSNETBW"],
+        "regions": ["DE_50HZ", "DE_AMPRION", "DE_TENNET", "DE_TRANSNETBW", "DE_CREOS"],
         "exog_targets": [],
     },
     "wind_offshore": {
@@ -98,7 +104,7 @@ GEN_LOAD_TARGETS = {
         "exog_targets": [],
     },
     "solar": {
-        "regions": ["DE_50HZ", "DE_AMPRION", "DE_TENNET", "DE_TRANSNETBW"],
+        "regions": ["DE_50HZ", "DE_AMPRION", "DE_TENNET", "DE_TRANSNETBW", "DE_CREOS"],
         "exog_targets": [],
     },
     "load": {

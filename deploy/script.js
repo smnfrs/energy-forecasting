@@ -13,8 +13,8 @@
     {
       id: "card-wind-onshore", target: "wind_onshore",
       label: "Wind Onshore", color: "#2266CC",
-      tsos: ["national", "50hz", "amprion", "tennet", "transnetbw"],
-      tsoLabels: { national: "National", "50hz": "50Hertz", amprion: "Amprion", tennet: "TenneT", transnetbw: "TransnetBW" },
+      tsos: ["national", "50hz", "amprion", "tennet", "transnetbw", "creos"],
+      tsoLabels: { national: "National", "50hz": "50Hertz", amprion: "Amprion", tennet: "TenneT", transnetbw: "TransnetBW", creos: "Creos" },
     },
     {
       id: "card-wind-offshore", target: "wind_offshore",
@@ -25,8 +25,8 @@
     {
       id: "card-solar", target: "solar",
       label: "Solar", color: "#DDAA00",
-      tsos: ["national", "50hz", "amprion", "tennet", "transnetbw"],
-      tsoLabels: { national: "National", "50hz": "50Hertz", amprion: "Amprion", tennet: "TenneT", transnetbw: "TransnetBW" },
+      tsos: ["national", "50hz", "amprion", "tennet", "transnetbw", "creos"],
+      tsoLabels: { national: "National", "50hz": "50Hertz", amprion: "Amprion", tennet: "TenneT", transnetbw: "TransnetBW", creos: "Creos" },
     },
     {
       id: "card-load", target: "load",
