@@ -602,11 +602,19 @@ async function buildTrackRecordChart() {
   }), plotConfig);
 }
 
-buildYearlyGenLoadChart();
-buildYearlyPriceChart();
-loadYearlyNarrative();
-buildForecastGenLoadCharts();
-buildForecastPriceChart();
-buildShapChart();
-loadForecastNarrative();
-buildTrackRecordChart();
+// Chart colours are read from CSS vars at build time (cssVar()), so a theme
+// switch needs a full rebuild rather than a relayout. buildAllCharts() re-runs
+// every builder; the shared theme toggle (theme.js) fires "themechange", which
+// index.html handles by calling this and then resizing the active slide.
+function buildAllCharts() {
+  buildYearlyGenLoadChart();
+  buildYearlyPriceChart();
+  loadYearlyNarrative();
+  buildForecastGenLoadCharts();
+  buildForecastPriceChart();
+  buildShapChart();
+  loadForecastNarrative();
+  buildTrackRecordChart();
+}
+window.buildAllCharts = buildAllCharts;
+buildAllCharts();

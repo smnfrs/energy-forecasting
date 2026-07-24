@@ -7,6 +7,17 @@
 <meta name="description" content="What the DE-LU day-ahead price and generation/load forecasts say about tomorrow, and why — with a real SHAP-based breakdown of the price model's own reasoning.">
 <link rel="stylesheet" href="../story.css">
 <link rel="stylesheet" href="forecast-story.css">
+<script>
+// Set the theme before first paint so there is no flash of the wrong colours.
+// Explicit choice (localStorage) wins over the OS preference. See theme.js.
+(function () {
+  try {
+    var t = localStorage.getItem("energy-theme");
+    if (!t) t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    document.documentElement.setAttribute("data-theme", t);
+  } catch (e) {}
+})();
+</script>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 </head>
 <body>
@@ -19,7 +30,9 @@
   <button class="nav-link" data-chapter="forecast-gen-load">Gen/load forecast</button>
   <button class="nav-link" data-chapter="forecast-price">Price forecast</button>
   <button class="nav-link" data-chapter="track-record">Track record</button>
-  <a href="../index.html" class="dash-link">The history &rarr;</a>
+  <button type="button" class="theme-toggle" data-theme-toggle aria-label="Switch theme">
+    <span data-theme-icon aria-hidden="true">☾</span>
+  </button>
 </nav>
 
 <main class="deck">
@@ -136,7 +149,6 @@
       </div>
       <div class="caption-col">
         <div class="narrative-box" id="narrative-track-record">Loading summary&hellip;</div>
-        <a class="cta-button closing-cta" href="../index.html">Read the history &rarr;</a>
       </div>
     </div>
   </section>
@@ -156,12 +168,13 @@
     carbon benchmarks.</p>
     <p>The written summaries are generated deterministically from these published numbers;
     the charts and figures above are always live regardless.</p>
-    <p>Built on the same models behind the <a href="../../index.html">live DE-LU forecast dashboard</a>.</p>
+    <p>Built on the same models behind the <a href="../../dashboard.html">live DE-LU forecast dashboard</a>.</p>
   </div>
 </footer>
 
 <script src="common.js"></script>
 <script src="forecast-story.js"></script>
+<script src="../../theme.js"></script>
 <script>
 // Slide deck. One chapter is shown at a time; left/right (arrow keys, the Back/
 // Next buttons, the dots, or a touch swipe) steps between them. There is no
@@ -237,6 +250,13 @@ document.addEventListener("touchend", (e) => {
 // slide correctly sized as they land.
 window.addEventListener("load", () => resizeCharts(slides[current]));
 setTimeout(() => resizeCharts(slides[current]), 1500);
+
+// Recolour every chart when the theme changes (colours are baked in at build
+// time), then re-size the visible slide's charts once the rebuild settles.
+document.addEventListener("themechange", () => {
+  if (window.buildAllCharts) window.buildAllCharts();
+  requestAnimationFrame(() => resizeCharts(slides[current]));
+});
 
 goTo(0);
 </script>

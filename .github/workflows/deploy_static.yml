@@ -2,7 +2,7 @@ name: Deploy Static
 
 # Redeploy GitHub Pages using the latest forecast data from the most recent
 # successful daily_forecast run.  Use this to iterate on dashboard styling
-# (script.js, styles.css, index.html, translations.json) without waiting for
+# (script.js, styles.css, dashboard.html, translations.json) without waiting for
 # the full 35-minute data + inference pipeline.
 #
 # Typical run time: ~2 minutes (includes hindcast regeneration from cache).

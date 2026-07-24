@@ -45,6 +45,51 @@
   }
 }
 
+/* Manual theme override (shared toggle — theme.js). These attribute selectors
+   are more specific than the bare :root above and the :root inside the @media
+   block, so an explicit choice always wins over the OS preference regardless of
+   source order. The inline <head> script sets data-theme before first paint. */
+:root[data-theme="light"] {
+  --surface-1:      #fcfcfb;
+  --page:           #f9f9f7;
+  --text-primary:   #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted:     #898781;
+  --grid:           #e1e0d9;
+  --axis:           #c3c2b7;
+  --border:         rgba(11,11,11,0.10);
+
+  --blue:    #2a78d6;
+  --aqua:    #1baf7a;
+  --yellow:  #eda100;
+  --green:   #008300;
+  --violet:  #4a3aa7;
+  --red:     #e34948;
+  --magenta: #e87ba4;
+  --orange:  #eb6834;
+  --gray-context: #b9b7ae;
+}
+:root[data-theme="dark"] {
+  --surface-1:      #1a1a19;
+  --page:           #0d0d0d;
+  --text-primary:   #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted:     #898781;
+  --grid:           #2c2c2a;
+  --axis:           #383835;
+  --border:         rgba(255,255,255,0.10);
+
+  --blue:    #3987e5;
+  --aqua:    #199e70;
+  --yellow:  #c98500;
+  --green:   #008300;
+  --violet:  #9085e9;
+  --red:     #e66767;
+  --magenta: #d55181;
+  --orange:  #d95926;
+  --gray-context: #55544e;
+}
+
 * { box-sizing: border-box; }
 body {
   margin: 0;
@@ -146,6 +191,23 @@ tbody tr:nth-child(even) { background: color-mix(in srgb, var(--text-primary) 3%
   white-space: nowrap;
 }
 .story-nav .dash-link:hover { background: var(--border); }
+.story-nav .theme-toggle {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--text-secondary);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.story-nav .theme-toggle:hover { color: var(--text-primary); background: var(--border); }
 
 .hero {
   max-width: 720px;
