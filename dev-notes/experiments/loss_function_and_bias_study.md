@@ -1,7 +1,9 @@
 # Loss function & forecast-bias study
 
-Status: **Phase 1 complete** (2026-07-24). Owner: Simon. Phase 1 results in §5a;
-Phase 2 not started.
+Status: **Phase 2 complete** (2026-07-26). Owner: Simon. Phase 1 results in §5a;
+Phase 2 Tracks 1&2 in §6a, Track 3 + study conclusion in §6b. Track 4
+de-prioritised (§6b). Next: promotion gate (§6) — full-pipeline retrain of the
+winning ensemble + conformal re-check.
 
 Goal: understand and reduce the systematic hour-of-day bias in the day-ahead
 price forecast — especially the evening-peak under-prediction — by experimenting
@@ -379,6 +381,59 @@ free calibration + RMSE improvement worth shipping. **But:**
 candidate for the promotion gate (§6, requires fresh full-pipeline retrain +
 conformal re-check). Track 3 (below) tests whether a variance-stabilised target
 does better at the root; Track 4 stays low-priority (§1d).
+
+---
+
+## 6b. Phase 2 results — Track 3 (target transform, H4) (2026-07-26)
+
+Run by `scripts/phase3_target_transform.py` on a free machine (~9 min, after the
+Stage-2 LU retrain finished). Loss held at native MAE; only `target_transform`
+varies. Artefacts in `data/experiments/phase3/`. Holdout = honest OOS comparator.
+
+| model | OOF MAE | OOF ev ME | HOLD MAE | HOLD RMSE | HOLD ev ME |
+|---|---|---|---|---|---|
+| LGBM none | 14.97 | +7.48 | **17.15** | 35.79 | **+12.90** |
+| LGBM log_shift | 14.77 | +6.52 | 17.49 | 36.03 | +13.48 |
+| LGBM yeo_johnson | 14.61 | +7.71 | 17.45 | 36.01 | +14.17 |
+| XGB none | 14.77 | +7.19 | **17.25** | 36.01 | **+13.73** |
+| XGB log_shift | 14.79 | +9.05 | 17.43 | 35.87 | +13.61 |
+| XGB yeo_johnson | 14.59 | +8.23 | 17.52 | 36.37 | +14.20 |
+
+**H4 REJECTED.** A variance-stabilised target does **not** reduce the diurnal
+bias. On the holdout every transform is *worse* on both MAE (+0.2–0.3) and evening
+ME. The small OOF-MAE gain (14.97→14.61) is CV-overfit — it doesn't reach the
+holdout.
+
+**Why it can't work (the clean reason):** the median commutes with any monotonic
+transform, so **MAE-in-transformed-space back-transforms to the same median
+prediction as MAE on raw prices** — the identical biased estimator. A transform
+only moves the bias if paired with a *mean*-targeting loss in transformed space,
+which is just the Phase 1 loss lever again. **H4 collapses into H1.** (Minor
+footnote: sklearn flags log_shift/yeo_johnson as not strictly invertible in
+float — a tiny reconstruction error, not the cause of the negative result.)
+
+### Track 4 — de-prioritised (not run)
+Given §1d (evening variance-bound), Track 2 (weighting can't manufacture bias the
+members lack), and Track 3 (transforms can't either), an evening-specialist /
+hour-conditional loss would face the same variance ceiling. **Recommend NOT
+running it as part of this study** — evening accuracy needs *features*
+(`future_work_and_feature_ideas.md`), not another calibration trick. Left
+documented as a ready option if ever wanted.
+
+### Study conclusion
+1. **Loss is the only real lever on the diurnal bias** (H1 ✓). Bias-aware losses
+   (`huberbias`, `blend`) and mean-targeting flatten evening ME at small MAE cost,
+   often improving RMSE.
+2. **Shippable, free win** (Tracks 1+2, §6a): incumbent + 4 loss-diverse members +
+   bias-penalised weighting → MAE flat, RMSE −5.1%, evening bias −23%. This is the
+   promotion-gate candidate.
+3. **Everything else is bounded by variance** (H2 small, H3/§1d, H4 rejected):
+   evening *accuracy* cannot be reached by loss, weighting, or target transform.
+   The next lever is spike/scarcity **features**, a separate effort.
+
+**Next action = promotion gate (§6):** fresh full-pipeline retrain of the
+candidate on the production split + conformal-coverage re-check, before any change
+to `models/ensemble_config.json`.
 
 ---
 
