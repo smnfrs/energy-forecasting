@@ -1284,7 +1284,7 @@
             "lon": 6.0833,
             "TSO": "Creos",
             "suffix": "_wf_hein",
-            "type": "wind farm"
+            "type": "onshore wind farm"
           }
         ]
       }
@@ -2908,7 +2908,7 @@
       "lon": 6.0833,
       "TSO": "Creos",
       "suffix": "_wf_hein",
-      "type": "wind farm"
+      "type": "onshore wind farm"
     },
     {
       "name": "Paris",
@@ -4216,7 +4216,7 @@
         "lon": 6.0833,
         "TSO": "Creos",
         "suffix": "_wf_hein",
-        "type": "wind farm"
+        "type": "onshore wind farm"
       }
     ],
     "solarfarms": [
