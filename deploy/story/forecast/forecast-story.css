@@ -52,6 +52,17 @@
 }
 .chart-col .panel + .panel { margin-top: 16px; }
 .caption-col { padding-top: 6px; }
+
+/* Tighter chapter head inside the deck so a whole slide (head + panel +
+   summary + the fixed control bar) fits one screen. The shared .chapter-head
+   uses a tall 64px top pad meant for the scroll layout. */
+.slide .chapter-head { padding-top: 28px; }
+
+/* Viewport-relative chart heights so each slide fits without the page
+   scrolling. Charts are built while their slide is display:none (0 height) and
+   sized by resizeCharts()/Plotly responsive once shown, which re-reads these. */
+.slide .chart { height: clamp(260px, 56vh, 460px); }
+.slide .chart.chart-tall { height: clamp(300px, 62vh, 520px); }
 /* Give the summary room to breathe as the main on-screen copy (it was a cramped
    side note in the old two-column beat layout). */
 .slide-body .narrative-box {
@@ -62,8 +73,14 @@
   top: 76px;
 }
 
-/* Closing cross-link under the track-record summary. */
-.closing-cta { display: inline-block; margin-top: 16px; }
+/* Closing cross-link under the track-record summary — the primary route from the
+   story to the live numbers, so it is deliberately larger than a body link. */
+.closing-cta {
+  display: inline-block;
+  margin-top: 20px;
+  font-size: 16px;
+  padding: 14px 30px;
+}
 
 /* ── Fixed bottom control bar ────────────────────────────────────────────── */
 .deck-controls {

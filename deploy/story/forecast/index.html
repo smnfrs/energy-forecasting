@@ -29,6 +29,7 @@
   <button class="nav-link" data-chapter="yearly-price">Prices</button>
   <button class="nav-link" data-chapter="forecast-gen-load">Gen/load forecast</button>
   <button class="nav-link" data-chapter="forecast-price">Price forecast</button>
+  <button class="nav-link" data-chapter="price-drivers">Price drivers</button>
   <button class="nav-link" data-chapter="track-record">Track record</button>
   <button type="button" class="theme-toggle" data-theme-toggle aria-label="Switch theme">
     <span data-theme-icon aria-hidden="true">☾</span>
@@ -61,7 +62,7 @@
         <div class="panel">
           <h2>Generation mix &mdash; the last 12 months</h2>
           <p class="sub">Stacked generation by fuel group, weekly mean (MWh/day); total load overlaid.</p>
-          <div id="chart-yearly-gen-load" class="chart" style="height:440px"></div>
+          <div id="chart-yearly-gen-load" class="chart"></div>
           <button class="table-toggle" data-table-for="chart-yearly-gen-load">View data as table</button>
           <div class="data-table" id="table-chart-yearly-gen-load"></div>
         </div>
@@ -82,7 +83,7 @@
         <div class="panel">
           <h2>DE-LU price &mdash; the last 12 months</h2>
           <p class="sub">Line: daily mean. Band: daily low to high (EUR/MWh).</p>
-          <div id="chart-yearly-price" class="chart" style="height:440px"></div>
+          <div id="chart-yearly-price" class="chart"></div>
         </div>
       </div>
       <div class="caption-col">
@@ -100,8 +101,9 @@
       <div class="chart-col">
         <div class="panel">
           <h2>Wind, solar &amp; load &mdash; recent actual vs. tomorrow's forecast</h2>
-          <p class="sub">Each panel: last 7 days actual (gray) vs. tomorrow's forecast (blue).</p>
-          <div id="chart-forecast-gen-load" class="chart" style="height:460px"></div>
+          <p class="sub">Each panel: last 7 days actual (gray), the model's hindcast over that
+          window (light blue), and tomorrow's forecast (blue).</p>
+          <div id="chart-forecast-gen-load" class="chart chart-tall"></div>
         </div>
       </div>
       <div class="caption-col">
@@ -120,12 +122,26 @@
         <div class="panel">
           <h2>24-hour price forecast</h2>
           <p class="sub">Line: forecast. Band: conformal prediction interval. Gray: last 7 days actual.</p>
-          <div id="chart-forecast-price" class="chart" style="height:280px"></div>
+          <div id="chart-forecast-price" class="chart"></div>
         </div>
+      </div>
+      <div class="caption-col">
+        <div class="narrative-box" id="narrative-price-forecast">Loading summary&hellip;</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="chapter slide" id="price-drivers" data-chapter="price-drivers">
+    <div class="chapter-head">
+      <p class="chapter-kicker">Tomorrow &mdash; <span class="delivery-date">&hellip;</span></p>
+      <h2>What's driving the price</h2>
+    </div>
+    <div class="slide-body">
+      <div class="chart-col">
         <div class="panel">
           <h2>What's driving tomorrow's price forecast</h2>
           <p class="sub">Mean signed SHAP contribution per category across the 24 forecast hours.</p>
-          <div id="chart-shap" class="chart" style="height:280px"></div>
+          <div id="chart-shap" class="chart"></div>
         </div>
       </div>
       <div class="caption-col">
@@ -144,11 +160,12 @@
         <div class="panel">
           <h2>Recent issued forecasts vs. what actually happened</h2>
           <p class="sub">Blue: forecast issued the day before delivery. Gray: realised price. Band: prediction interval.</p>
-          <div id="chart-track-record" class="chart" style="height:440px"></div>
+          <div id="chart-track-record" class="chart"></div>
         </div>
       </div>
       <div class="caption-col">
         <div class="narrative-box" id="narrative-track-record">Loading summary&hellip;</div>
+        <a class="cta-button closing-cta" href="../../dashboard.html">See the numbers &rarr; live dashboard</a>
       </div>
     </div>
   </section>

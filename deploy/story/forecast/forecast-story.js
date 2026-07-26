@@ -294,6 +294,9 @@ async function loadYearlyNarrative() {
 
 async function buildForecastGenLoadCharts() {
   const actuals = await fetchJSON(`${DEPLOY_DATA}/gen_load_actuals.json`);
+  // The model's own predictions over the recent actual window, so the reader can
+  // see how closely it tracked before the forecast (blue) takes over tomorrow.
+  const hindcast = await fetchJSON(`${DEPLOY_DATA}/gen_load_hindcast.json`);
   const traces = [];
   const layout = baseLayout({
     grid: { rows: 2, columns: 2, pattern: "independent" },
@@ -323,6 +326,20 @@ async function buildForecastGenLoadCharts() {
         type: "scatter", mode: "lines", line: { width: 1.5, color: cssVar("--gray-context") }, xaxis: xa, yaxis: ya,
       });
     }
+
+    // Hindcast (dotted): the model's prediction over the same recent hours. Its
+    // timestamps carry a +00:00 offset; strip it so it shares the forecast's
+    // naive time basis and the two model lines read continuously into tomorrow.
+    const hc = hindcast?.[t.key] ?? [];
+    if (hc.length) {
+      traces.push({
+        x: hc.map(p => (p.timestamp || "").replace(/(\+00:00|Z)$/, "")), y: hc.map(p => p.forecast),
+        name: "Model hindcast", legendgroup: "hindcast", showlegend: i === 0,
+        type: "scatter", mode: "lines",
+        line: { width: 1.5, color: cssVar("--blue"), dash: "dot" }, xaxis: xa, yaxis: ya,
+      });
+    }
+
     traces.push({
       x: forecast.forecasts.map(f => f.timestamp), y: forecast.forecasts.map(f => f.forecast),
       name: "Forecast", legendgroup: "forecast", showlegend: i === 0,
@@ -488,6 +505,21 @@ function forecastGenLoadSentenceFrom(series) {
   return parts.length ? parts.join(" ") : null;
 }
 
+/** Factual price-forecast note from price_forecast.json (mean + daily range over
+ *  the first 24 forecast hours). Deliberately plain — Stage 6 refines the copy.
+ *  Pure/testable. */
+function forecastPriceSentence(forecast) {
+  const day = (forecast?.forecasts ?? []).slice(0, 24).map(f => f.forecast).filter(isNum);
+  if (!day.length) return null;
+  const mean = meanOf(day);
+  const lo = Math.min(...day), hi = Math.max(...day);
+  let s = `Tomorrow's day-ahead price is forecast to average about €${Math.round(mean)}/MWh`;
+  if (isFinite(lo) && isFinite(hi)) {
+    s += `, ranging from €${Math.round(lo)} to €${Math.round(hi)} across the 24 hours`;
+  }
+  return s + ".";
+}
+
 /** Price-driver note from price_shap.json. Pure/testable. */
 function forecastPriceDriverSentence(shap) {
   if (!shap?.categories?.length || !shap.category_contributions) return null;
@@ -517,6 +549,8 @@ async function loadForecastNarrative() {
   if (deliveryDate) {
     document.querySelectorAll(".delivery-date").forEach(el => { el.textContent = deliveryDate; });
   }
+
+  renderTemplated("narrative-price-forecast", forecastPriceSentence(price));
 
   const actuals = await fetchJSON(`${DEPLOY_DATA}/gen_load_actuals.json`);
   const series = [];
@@ -567,9 +601,13 @@ async function buildTrackRecordChart() {
   if (!hist?.forecasts?.length) return;
   const actuals = await fetchJSON(`${DEPLOY_DATA}/actuals.json`);
 
-  // Concatenate the issued forecasts (each a 24h delivery day) into one track.
+  // Concatenate the issued forecasts (each a 24h delivery day) into one track,
+  // limited to the last 7 delivery days so the chart stays readable rather than
+  // smearing every forecast ever issued.
   const fx = [], fy = [], flo = [], fhi = [];
-  const issues = hist.forecasts.slice().sort((a, b) => (a.issued_at > b.issued_at ? 1 : -1));
+  const issues = hist.forecasts.slice()
+    .sort((a, b) => (a.issued_at > b.issued_at ? 1 : -1))
+    .slice(-7);
   for (const iss of issues) {
     for (const p of (iss.forecasts || [])) {
       fx.push(p.timestamp); fy.push(p.forecast); flo.push(p.forecast_lower); fhi.push(p.forecast_upper);
