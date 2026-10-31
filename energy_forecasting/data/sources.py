@@ -408,7 +408,7 @@ def _merge_column(df: pd.DataFrame, col_name: str, series: pd.Series) -> pd.Data
     if col_name in df.columns:
         combined_index = df.index.union(series.index)
         df = df.reindex(combined_index)
-        df.loc[series.index, col_name] = series.values
+        df.loc[series.index, col_name] = series.values.astype(df[col_name].dtype)
     else:
         combined_index = df.index.union(series.index)
         df = df.reindex(combined_index)
