@@ -206,6 +206,23 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Fail fast, with a clear message, if the restored own-forecast history is
+      # far behind the actuals (e.g. the cache was evicted during a long outage
+      # and only an old Release tarball is left). A stale warm cache falls back to
+      # the Release tarball if that is fresher. The monthly coverage gate inside
+      # inference remains authoritative; this just catches gross staleness early
+      # and, via `outcome`, stops a stale state being re-saved as a cache below.
+      - name: Check restored own-forecast history is fresh
+        id: freshness
+        run: |
+          gh release download v1.0.0 --repo $REPO --pattern 'gen_load_hf.tar.gz' --dir /tmp/ --clobber 2>/dev/null \
+            || echo "gen_load_hf.tar.gz not in Release"
+          args=""
+          if [ -f /tmp/gen_load_hf.tar.gz ]; then args="--release-tarball /tmp/gen_load_hf.tar.gz"; fi
+          conda run -n energy-forecasting python -m energy_forecasting.deploy.history_freshness $args
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Run inference (skip data update)
         run: conda run -n energy-forecasting energy-forecasting deploy forecast --skip-update
 
@@ -234,7 +251,10 @@ jobs:
       - name: Save deploy state (rolling history + gen/load forecasts)
         # always() so a downstream (e.g. price) failure can never again discard
         # the freshly-appended gen/load historical_forecasts and freeze the frontier.
-        if: always()
+        # Only when the freshness check passed: a run that started from stale
+        # history must not save that state as the newest cache, where it would
+        # shadow the Release tarball on the next run.
+        if: always() && steps.freshness.outcome == 'success'
         uses: actions/cache/save@v4
         with:
           path: |
